@@ -16,11 +16,17 @@ public struct DrawnCharacter
     public int CharacterCode;
 }
 
-public class CodePage
+public class Glyph(int width, byte[] bitmap)
 {
-    public int CharacterWidth;
-    public int CharacterHeight;
-    public int[][] GlyphBitmaps = []; // Each glyph bitmap is an array of integers representing rows of pixels
+    public int Width = width; // Height is implied by Bitmap length / Width
+    public int Height => Bitmap == null ? 0 : (Bitmap.Length / Width);
+    public byte[]? Bitmap = bitmap;
+    public Action? Action;
+}
+
+public partial class CodePage(Glyph[] glyphs)
+{
+    public Glyph[] Glyphs = glyphs;
 }
 
 public class IOEmulator
@@ -105,24 +111,19 @@ public class IOEmulator
 
     public void ClearTextBuffer()
     {
-        for (int i = 0; i < TextBuffer.Length; i++)
+        var defaultChar = new DrawnCharacter
         {
-            TextBuffer[i] = new DrawnCharacter
-            {
-                BackgroundColorIndex = BackgroundColorIndex,
-                ForegroundColorIndex = ForegroundColorIndex,
-                CharacterCode = 0
-            };
-        }
+            BackgroundColorIndex = BackgroundColorIndex,
+            ForegroundColorIndex = ForegroundColorIndex,
+            CharacterCode = 0
+        };
+        Array.Fill(TextBuffer, defaultChar);
     }
 
     public void ClearPixelBuffer()
     {
         RGB bgColor = GetColor(BackgroundColorIndex);
-        for (int i = 0; i < PixelBuffer.Length; i++)
-        {
-            PixelBuffer[i] = bgColor;
-        }
+        Array.Fill(PixelBuffer, bgColor);
     }
 
     public void SetTextDimensions(int width, int height)
@@ -198,7 +199,7 @@ public class IOEmulator
     }
 }
 
-public class IOEmulatorException : AggregateException
+public class IOEmulatorException : Exception
 {
     public string Method;
 
