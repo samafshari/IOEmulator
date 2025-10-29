@@ -109,17 +109,6 @@ public class IOEmulator
         };
     }
 
-    public void ClearTextBuffer()
-    {
-        var defaultChar = new DrawnCharacter
-        {
-            BackgroundColorIndex = BackgroundColorIndex,
-            ForegroundColorIndex = ForegroundColorIndex,
-            CharacterCode = 0
-        };
-        Array.Fill(TextBuffer, defaultChar);
-    }
-
     public void ClearPixelBuffer()
     {
         RGB bgColor = GetColor(BackgroundColorIndex);
@@ -130,10 +119,8 @@ public class IOEmulator
     {
         TextCols = width;
         TextRows = height;
-        TextBuffer = new DrawnCharacter[TextCols * TextRows];
         CursorX = 0;
         CursorY = 0;
-        ClearTextBuffer();
     }
 
     public void SetPixelDimensions(int width, int height)
@@ -146,7 +133,6 @@ public class IOEmulator
 
     public void Cls()
     {
-        ClearTextBuffer();
         ClearPixelBuffer();
         CursorX = 0;
         CursorY = 0;
@@ -162,6 +148,27 @@ public class IOEmulator
 
     public void PutChar(int charCode)
     {
+        if (charCode == 7) // BEL - Bell
+        {
+            // Handle bell - for now, ignore
+            return;
+        }
+        else if (charCode == 13) // CR - Carriage Return
+        {
+            CursorX = 0;
+            return;
+        }
+        else if (charCode == 10) // LF - Line Feed
+        {
+            CursorY++;
+            if (CursorY >= TextRows)
+            {
+                CursorY = TextRows - 1;
+                ScrollTextUp(1);
+            }
+            return;
+        }
+        // Else, write the character and advance cursor
         WriteTextAt(CursorX, CursorY, charCode);
         CursorX++;
         if (CursorX >= TextCols)
@@ -178,23 +185,59 @@ public class IOEmulator
 
     public void ScrollTextUp(int lines)
     {
-        if (lines <= 0 || lines >= TextRows)
+        if (lines <= 0 || lines > TextRows)
             throw new IOEmulatorException("Invalid number of lines to scroll.");
         Array.Copy(TextBuffer, lines * TextCols, TextBuffer, 0, (TextRows - lines) * TextCols);
+        // Clear the newly freed lines at the bottom
         for (int r = TextRows - lines; r < TextRows; r++)
         {
             for (int c = 0; c < TextCols; c++)
             {
-                WriteTextAt(c, r, 0);
+                WriteTextAt(c, r, 32); // ASCII space
             }
         }
     }
+
 
     public void PutString(string str)
     {
         foreach (char ch in str)
         {
             PutChar(ch);
+        }
+    }
+
+    public void PutGlyph(Glyph glyph)
+    {
+    }
+
+    public void PutGlyph(Glyph glyph, int x0, int y0, RGB bg, RGB fg)
+    {
+        if (glyph == null) return;
+        glyph.Action?.Invoke();
+        if (glyph.Bitmap == null || glyph.Bitmap.Length == 0) return;
+        int glyphHeight = glyph.Height;
+        int glyphWidth = glyph.Width;
+        int i = 0;
+        for (int y = 0; y < glyphHeight; y++)
+        {
+            if (y >= ResolutionH) break;
+            for (int x = 0; x < glyphWidth; x++)
+            {
+                if (x >= ResolutionW) break;
+                i++;
+                byte pixelValue = glyph.Bitmap[i];
+                int pixelX = x0 + x;
+                int pixelY = y0 + y;
+                if (pixelValue == 0)
+                {
+                    WritePixelAt(pixelX, pixelY, bg);
+                }
+                else
+                {
+                    WritePixelAt(pixelX, pixelY, fg);
+                }
+            }
         }
     }
 }
