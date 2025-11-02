@@ -9,6 +9,12 @@ public struct RGB(byte r, byte g, byte b)
     public byte B = b;
 }
 
+public struct Coords
+{
+    public int X;
+    public int Y;
+}
+
 public struct DrawnCharacter
 {
     public int BackgroundColorIndex;
@@ -29,19 +35,58 @@ public partial class CodePage(Glyph[] glyphs)
     public Glyph[] Glyphs = glyphs;
 }
 
+public struct ScreenMode(int textCols, int textRows, int resW, int resH, RGB[] palette, CodePage cp)
+{
+    public int TextCols = textCols;
+    public int TextRows = textRows;
+    public int ResolutionW = resW;
+    public int ResolutionH = resH;
+    public RGB[] Palette = palette;
+    public CodePage CodePage = cp;
+}
+
 public class IOEmulator
 {
-    public RGB[] Palette = [];
+    public CodePage CodePage = CodePage.IBM8x8();
+    public RGB[] Palette = IOPalettes.EGA;
     public int TextCols;
     public int TextRows;
     public int ResolutionW;
     public int ResolutionH;
-    public DrawnCharacter[] TextBuffer = [];
     public RGB[] PixelBuffer = [];
     public int BackgroundColorIndex;
     public int ForegroundColorIndex;
     public int CursorX;
     public int CursorY;
+    public int TurtleX;
+    public int TurtleY;
+
+    public IOEmulator()
+    {
+        LoadQBasicScreenMode(0);
+    }
+
+    public void LoadScreenMode(ScreenMode mode)
+    {
+        TextCols = mode.TextCols;
+        TextRows = mode.TextRows;
+        ResolutionW = mode.ResolutionW;
+        ResolutionH = mode.ResolutionH;
+        Palette = mode.Palette;
+        CodePage = mode.CodePage;
+        PixelBuffer = new RGB[ResolutionW * ResolutionH];
+        ClearPixelBuffer();
+        CursorX = 0;
+        CursorY = 0;
+        TurtleX = 0;
+        TurtleY = 0;
+    }
+
+    public void LoadQBasicScreenMode(int modeIndex)
+    {
+        var mode = IOScreenModes.GetQBasicScreenMode(modeIndex);
+        LoadScreenMode(mode);
+    }
 
     public RGB GetColor(int index)
     {
@@ -78,20 +123,6 @@ public class IOEmulator
         PixelBuffer[y * ResolutionW + x] = GetColor(colorIndex);
     }
 
-    public ref DrawnCharacter ReadCharAt(int col, int row)
-    {
-        if (col < 0 || col >= TextCols || row < 0 || row >= TextRows)
-            throw new IOEmulatorException("Text coordinates out of range.");
-        return ref TextBuffer[row * TextCols + col];
-    }
-
-    public int ReadTextAt(int col, int row)
-    {
-        if (col < 0 || col >= TextCols || row < 0 || row >= TextRows)
-            throw new IOEmulatorException("Text coordinates out of range.");
-        return TextBuffer[row * TextCols + col].CharacterCode;
-    }
-
     public void WriteTextAt(int col, int row, int charCode)
     {
         WriteTextAt(col, row, charCode, ForegroundColorIndex, BackgroundColorIndex);
@@ -101,12 +132,7 @@ public class IOEmulator
     {
         if (col < 0 || col >= TextCols || row < 0 || row >= TextRows)
             throw new IOEmulatorException("Text coordinates out of range.");
-        TextBuffer[row * TextCols + col] = new DrawnCharacter
-        {
-            BackgroundColorIndex = bgColorIndex,
-            ForegroundColorIndex = fgColorIndex,
-            CharacterCode = charCode
-        };
+
     }
 
     public void ClearPixelBuffer()
@@ -187,15 +213,15 @@ public class IOEmulator
     {
         if (lines <= 0 || lines > TextRows)
             throw new IOEmulatorException("Invalid number of lines to scroll.");
-        Array.Copy(TextBuffer, lines * TextCols, TextBuffer, 0, (TextRows - lines) * TextCols);
-        // Clear the newly freed lines at the bottom
-        for (int r = TextRows - lines; r < TextRows; r++)
-        {
-            for (int c = 0; c < TextCols; c++)
-            {
-                WriteTextAt(c, r, 32); // ASCII space
-            }
-        }
+        
+        int charHeight = ResolutionH / TextRows;
+        int shiftPixels = lines * charHeight;
+        int shiftBytes = shiftPixels * ResolutionW;
+        
+        Array.Copy(PixelBuffer, shiftBytes, PixelBuffer, 0, PixelBuffer.Length - shiftBytes);
+        
+        RGB bgColor = GetColor(BackgroundColorIndex);
+        Array.Fill(PixelBuffer, bgColor, PixelBuffer.Length - shiftBytes, shiftBytes);
     }
 
 
@@ -207,8 +233,16 @@ public class IOEmulator
         }
     }
 
+    public Glyph GetGlyphForCharacter(int character)
+    {
+        return CodePage.Glyphs[character];
+    }
+
     public void PutGlyph(Glyph glyph)
     {
+        var bg = GetColor(BackgroundColorIndex);
+        var fg = GetColor(BackgroundColorIndex);
+        PutGlyph(glyph, TurtleX, TurtleY, bg, fg);
     }
 
     public void PutGlyph(Glyph glyph, int x0, int y0, RGB bg, RGB fg)
@@ -239,6 +273,41 @@ public class IOEmulator
                 }
             }
         }
+    }
+
+    public void PutGlyph(int character, int x0, int y0, RGB bg, RGB fg)
+    {
+        var glyph = GetGlyphForCharacter(character);
+        PutGlyph(glyph, x0, y0, bg, fg);
+    }
+
+    public Coords GetTextXY(int col, int row)
+    {
+        int charWidth = ResolutionW / TextCols;
+        int charHeight = ResolutionH / TextRows;
+        return new Coords
+        {
+            X = col * charWidth,
+            Y = row * charHeight
+        };
+    }
+
+    public void PutGlyphAtCell(int character, int col, int row, RGB bg, RGB fg)
+    {
+        var coords = GetTextXY(col, row);
+        PutGlyph(character, coords.X, coords.Y, bg, fg);
+    }
+
+    public void PutGlyphAtCursor(int character, RGB bg, RGB fg)
+    {
+        PutGlyphAtCell(character, CursorX, CursorY, bg, fg);
+    }
+
+    public void PutGlyphAtCursor(int character)
+    {
+        var bg = GetColor(BackgroundColorIndex);
+        var fg = GetColor(ForegroundColorIndex);
+        PutGlyphAtCell(character, CursorX, CursorY, bg, fg);
     }
 }
 

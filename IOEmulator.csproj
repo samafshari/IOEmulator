@@ -4,6 +4,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace>Neat</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\IBM8x8.bin" />
+    <EmbeddedResource Include="Fonts\IBM8x14.bin" />
+    <EmbeddedResource Include="Fonts\IBM9x14.bin" />
+    <EmbeddedResource Include="Fonts\IBM8x16.bin" />
+    <EmbeddedResource Include="Fonts\IBM9x16.bin" />
+  </ItemGroup>
 
 </Project>
