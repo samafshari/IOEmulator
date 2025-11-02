@@ -19,8 +19,10 @@ public static class IOScreenModes
             9 => new ScreenMode(0, 0, 640, 350, IOPalettes.EGA, CodePage.IBM8x16()),
             10 => new ScreenMode(0, 0, 640, 350, IOPalettes.EGA, CodePage.IBM8x16()),
             11 => new ScreenMode(0, 0, 640, 480, IOPalettes.EGA, CodePage.IBM8x16()),
-            12 => new ScreenMode(0, 0, 640, 480, IOPalettes.EGA, CodePage.IBM8x16()),
-            13 => new ScreenMode(0, 0, 320, 200, IOPalettes.VGA, CodePage.IBM8x8()),
+            // SCREEN 12: 640x480x16, typical 80x30 text with 8x16 font
+            12 => new ScreenMode(80, 30, 640, 480, IOPalettes.VGA, CodePage.IBM8x16()),
+            // SCREEN 13: 320x200x256, typical 40x25 text with 8x8 font
+            13 => new ScreenMode(40, 25, 320, 200, IOPalettes.VGA, CodePage.IBM8x8()),
             _ => throw new ArgumentOutOfRangeException(nameof(i), $"Unsupported QBASIC screen mode: {i}")
         };
     }

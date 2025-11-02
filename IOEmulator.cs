@@ -15,13 +15,6 @@ public struct Coords
     public int Y;
 }
 
-public struct DrawnCharacter
-{
-    public int BackgroundColorIndex;
-    public int ForegroundColorIndex;
-    public int CharacterCode;
-}
-
 public class Glyph(int width, byte[] bitmap)
 {
     public int Width = width; // Height is implied by Bitmap length / Width
@@ -47,6 +40,8 @@ public struct ScreenMode(int textCols, int textRows, int resW, int resH, RGB[] p
 
 public class IOEmulator
 {
+    // Pixel VRAM surface wrapper
+    public VramSurface VRAM { get; private set; } = new VramSurface(1, 1);
     public CodePage CodePage = CodePage.IBM8x8();
     public RGB[] Palette = IOPalettes.EGA;
     public int TextCols;
@@ -74,7 +69,8 @@ public class IOEmulator
         ResolutionH = mode.ResolutionH;
         Palette = mode.Palette;
         CodePage = mode.CodePage;
-        PixelBuffer = new RGB[ResolutionW * ResolutionH];
+    PixelBuffer = new RGB[ResolutionW * ResolutionH];
+    VRAM = new VramSurface(PixelBuffer, ResolutionW, ResolutionH);
         ClearPixelBuffer();
         CursorX = 0;
         CursorY = 0;
@@ -109,6 +105,13 @@ public class IOEmulator
         return PixelBuffer[y * ResolutionW + x];
     }
 
+    public RGB ReadPixelClipped(int x, int y)
+    {
+        if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return new RGB(0,0,0);
+        if (IsClipped(x, y)) return new RGB(0,0,0);
+        return PixelBuffer[y * ResolutionW + x];
+    }
+
     public void WritePixelAt(int x, int y, RGB color)
     {
         if (x < 0 || x >= ResolutionW || y < 0 || y >= ResolutionH)
@@ -123,6 +126,35 @@ public class IOEmulator
         PixelBuffer[y * ResolutionW + x] = GetColor(colorIndex);
     }
 
+    // Clipping state (VIEW)
+    public int ClipX1 = 0, ClipY1 = 0, ClipX2 = int.MaxValue, ClipY2 = int.MaxValue; // inclusive
+
+    public void ResetView()
+    {
+        ClipX1 = 0; ClipY1 = 0; ClipX2 = ResolutionW - 1; ClipY2 = ResolutionH - 1;
+    }
+
+    public void SetView(int x1, int y1, int x2, int y2)
+    {
+        if (x2 < x1 || y2 < y1) throw new IOEmulatorException("Invalid view rectangle.");
+        ClipX1 = Math.Max(0, x1);
+        ClipY1 = Math.Max(0, y1);
+        ClipX2 = Math.Min(ResolutionW - 1, x2);
+        ClipY2 = Math.Min(ResolutionH - 1, y2);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsClipped(int x, int y)
+        => x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2;
+
+    // Safe pixel write honoring clip and bounds
+    public void WritePixelClipped(int x, int y, RGB color)
+    {
+        if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return;
+        if (IsClipped(x, y)) return;
+        PixelBuffer[y * ResolutionW + x] = color;
+    }
+
     public void WriteTextAt(int col, int row, int charCode)
     {
         WriteTextAt(col, row, charCode, ForegroundColorIndex, BackgroundColorIndex);
@@ -132,13 +164,43 @@ public class IOEmulator
     {
         if (col < 0 || col >= TextCols || row < 0 || row >= TextRows)
             throw new IOEmulatorException("Text coordinates out of range.");
-
+        var bg = GetColor(bgColorIndex);
+        var fg = GetColor(fgColorIndex);
+        PutGlyphAtCell(charCode, col, row, bg, fg);
     }
 
     public void ClearPixelBuffer()
     {
         RGB bgColor = GetColor(BackgroundColorIndex);
         Array.Fill(PixelBuffer, bgColor);
+    }
+
+    // WINDOW (world-to-screen) mapping
+    public bool WindowEnabled = false;
+    public double WinX1 = 0, WinY1 = 0, WinX2 = 1, WinY2 = 1; // world coords
+
+    public void SetWindow(double wx1, double wy1, double wx2, double wy2)
+    {
+        if (wx2 == wx1 || wy2 == wy1) throw new IOEmulatorException("Invalid window extents.");
+        WinX1 = wx1; WinY1 = wy1; WinX2 = wx2; WinY2 = wy2; WindowEnabled = true;
+    }
+
+    public void ResetWindow()
+    {
+        WindowEnabled = false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public (int sx, int sy) WorldToScreen(double x, double y)
+    {
+        if (!WindowEnabled) return ((int)Math.Round(x), (int)Math.Round(y));
+        // Map world to viewport (current view / clip area)
+        double vx1 = ClipX1, vy1 = ClipY1, vx2 = ClipX2, vy2 = ClipY2;
+        double u = (x - WinX1) / (WinX2 - WinX1);
+        double v = (y - WinY1) / (WinY2 - WinY1);
+        int sx = (int)Math.Round(vx1 + u * (vx2 - vx1));
+        int sy = (int)Math.Round(vy1 + v * (vy2 - vy1));
+        return (sx, sy);
     }
 
     public void SetTextDimensions(int width, int height)
@@ -154,6 +216,7 @@ public class IOEmulator
         ResolutionW = width;
         ResolutionH = height;
         PixelBuffer = new RGB[ResolutionW * ResolutionH];
+        VRAM = new VramSurface(PixelBuffer, ResolutionW, ResolutionH);
         ClearPixelBuffer();
     }
 
@@ -177,6 +240,34 @@ public class IOEmulator
         if (charCode == 7) // BEL - Bell
         {
             // Handle bell - for now, ignore
+            return;
+        }
+        else if (charCode == 8) // BS - Backspace
+        {
+            if (CursorX > 0)
+            {
+                CursorX--;
+            }
+            return;
+        }
+        else if (charCode == 9) // TAB - Horizontal Tab (every 8 cols)
+        {
+            int nextTabStop = ((CursorX / 8) + 1) * 8;
+            if (nextTabStop >= TextCols)
+            {
+                // move to new line
+                CursorX = 0;
+                CursorY++;
+                if (CursorY >= TextRows)
+                {
+                    CursorY = TextRows - 1;
+                    ScrollTextUp(1);
+                }
+            }
+            else
+            {
+                CursorX = nextTabStop;
+            }
             return;
         }
         else if (charCode == 13) // CR - Carriage Return
@@ -241,7 +332,7 @@ public class IOEmulator
     public void PutGlyph(Glyph glyph)
     {
         var bg = GetColor(BackgroundColorIndex);
-        var fg = GetColor(BackgroundColorIndex);
+        var fg = GetColor(ForegroundColorIndex);
         PutGlyph(glyph, TurtleX, TurtleY, bg, fg);
     }
 
@@ -255,21 +346,25 @@ public class IOEmulator
         int i = 0;
         for (int y = 0; y < glyphHeight; y++)
         {
-            if (y >= ResolutionH) break;
+            int pixelY = y0 + y;
+            // Skip whole row if outside vertical bounds, but keep bitmap index in sync
+            if (pixelY < 0 || pixelY >= ResolutionH)
+            {
+                i += glyphWidth;
+                continue;
+            }
             for (int x = 0; x < glyphWidth; x++)
             {
-                if (x >= ResolutionW) break;
-                i++;
-                byte pixelValue = glyph.Bitmap[i];
                 int pixelX = x0 + x;
-                int pixelY = y0 + y;
+                byte pixelValue = glyph.Bitmap[i++];
+                if (pixelX < 0 || pixelX >= ResolutionW) continue;
                 if (pixelValue == 0)
                 {
-                    WritePixelAt(pixelX, pixelY, bg);
+                    WritePixelClipped(pixelX, pixelY, bg);
                 }
                 else
                 {
-                    WritePixelAt(pixelX, pixelY, fg);
+                    WritePixelClipped(pixelX, pixelY, fg);
                 }
             }
         }
@@ -308,6 +403,134 @@ public class IOEmulator
         var bg = GetColor(BackgroundColorIndex);
         var fg = GetColor(ForegroundColorIndex);
         PutGlyphAtCell(character, CursorX, CursorY, bg, fg);
+    }
+
+    // ====== Primitive graphics ======
+    public void PSet(int x, int y, int colorIndex)
+    {
+        WritePixelClipped(x, y, GetColor(colorIndex));
+    }
+
+    public RGB Point(int x, int y)
+    {
+        return ReadPixelClipped(x, y);
+    }
+
+    public void Line(int x1, int y1, int x2, int y2, int? colorIndex = null)
+    {
+        var color = colorIndex.HasValue ? GetColor(colorIndex.Value) : GetColor(ForegroundColorIndex);
+        // Bresenham
+        int dx = Math.Abs(x2 - x1), dy = Math.Abs(y2 - y1);
+        int sx = x1 < x2 ? 1 : -1;
+        int sy = y1 < y2 ? 1 : -1;
+        int err = dx - dy;
+        int x = x1, y = y1;
+        while (true)
+        {
+            WritePixelClipped(x, y, color);
+            if (x == x2 && y == y2) break;
+            int e2 = err << 1;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx) { err += dx; y += sy; }
+        }
+    }
+
+    // World versions using WINDOW
+    public void PSetW(double x, double y, int colorIndex)
+    {
+        var (sx, sy) = WorldToScreen(x, y);
+        PSet(sx, sy, colorIndex);
+    }
+
+    public void LineW(double x1, double y1, double x2, double y2, int? colorIndex = null)
+    {
+        var (sx1, sy1) = WorldToScreen(x1, y1);
+        var (sx2, sy2) = WorldToScreen(x2, y2);
+        Line(sx1, sy1, sx2, sy2, colorIndex);
+    }
+
+    // ====== Block GET/PUT ======
+    public enum RasterOp { PSET, AND, OR, XOR }
+
+    public struct ImageBlock
+    {
+        public int Width;
+        public int Height;
+        public RGB[] Data;
+    }
+
+    public ImageBlock GetBlock(int x, int y, int width, int height)
+    {
+        if (width <= 0 || height <= 0) throw new IOEmulatorException("Invalid block dimensions.");
+        var data = new RGB[width * height];
+        int i = 0;
+        for (int yy = 0; yy < height; yy++)
+        {
+            int py = y + yy;
+            for (int xx = 0; xx < width; xx++)
+            {
+                int px = x + xx;
+                if ((uint)px < (uint)ResolutionW && (uint)py < (uint)ResolutionH)
+                {
+                    data[i++] = PixelBuffer[py * ResolutionW + px];
+                }
+                else
+                {
+                    data[i++] = new RGB(0, 0, 0);
+                }
+            }
+        }
+        return new ImageBlock { Width = width, Height = height, Data = data };
+    }
+
+    private static RGB ApplyOp(RGB dst, RGB src, RasterOp op)
+    {
+        byte f(byte a, byte b) => op switch
+        {
+            RasterOp.PSET => b,
+            RasterOp.AND => (byte)(a & b),
+            RasterOp.OR  => (byte)(a | b),
+            RasterOp.XOR => (byte)(a ^ b),
+            _ => b
+        };
+        return new RGB(f(dst.R, src.R), f(dst.G, src.G), f(dst.B, src.B));
+    }
+
+    public void PutBlock(int x, int y, in ImageBlock block, RasterOp op)
+    {
+        if (block.Data == null || block.Data.Length != block.Width * block.Height)
+            throw new IOEmulatorException("Invalid block data.");
+        int i = 0;
+        for (int yy = 0; yy < block.Height; yy++)
+        {
+            int py = y + yy;
+            if ((uint)py >= (uint)ResolutionH) { i += block.Width; continue; }
+            for (int xx = 0; xx < block.Width; xx++)
+            {
+                int px = x + xx;
+                var src = block.Data[i++];
+                if ((uint)px >= (uint)ResolutionW) continue;
+                if (IsClipped(px, py)) continue;
+                var dst = PixelBuffer[py * ResolutionW + px];
+                PixelBuffer[py * ResolutionW + px] = ApplyOp(dst, src, op);
+            }
+        }
+    }
+
+    // ====== BLOAD/BSAVE (VRAM bytes) ======
+    public byte[] ReadVramBytes(int offset, int count) => VRAM.ReadBytes(offset, count);
+    public void WriteVramBytes(int offset, ReadOnlySpan<byte> data) => VRAM.WriteBytes(offset, data);
+
+    public void BSave(string path, int offset, int length)
+    {
+        var bytes = ReadVramBytes(offset, length);
+        File.WriteAllBytes(path, bytes);
+    }
+
+    public void BLoad(string path, int offset)
+    {
+        var bytes = File.ReadAllBytes(path);
+        WriteVramBytes(offset, bytes);
     }
 }
 
