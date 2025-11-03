@@ -1,3 +1,7 @@
 <Solution>
-  <Project Path="IOEmulator.csproj" />
+  <Project Path="IOEmulator.Lib\IOEmulator.csproj" />
+  <Project Path="IOEmulator.AvaloniaApp\IOEmulator.AvaloniaApp.csproj" />
+  <Project Path="IOEmulator.Tests\IOEmulator.Tests.csproj" />
+  <Project Path="IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
+  <Project Path="IOEmulator.SDLApp\IOEmulator.SDLApp.csproj" />
 </Solution>

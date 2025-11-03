@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Neat.UI.MainWindow"
+        Title="IOEmulator Viewer" Width="900" Height="600"
+        Background="#000000">
+    <DockPanel>
+        <Menu x:Name="mainMenu" DockPanel.Dock="Top">
+            <MenuItem Header="_Samples" x:Name="samplesMenu" />
+        </Menu>
+        <Border x:Name="container" Background="#000000" ClipToBounds="True">
+            <!-- VRAM image overlay (code-behind will set Source) -->
+            <Image x:Name="vramImage"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch"/>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,0 +1,7 @@
+SCREEN 13
+COLOR 15,1
+CLS
+LINE (0,0)-(319,199), 12
+LINE (0,199)-(319,0), 10
+PRINT "Press any key..."
+SLEEP

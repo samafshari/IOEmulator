@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Neat.SDLApp</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SDL2-CS" Version="2.0.0" />
+  </ItemGroup>
+  <!-- Include SDL2-CS source files from the NuGet package since this legacy package ships sources under content/ -->
+  <ItemGroup>
+    <Compile Include="$(NuGetPackageRoot)sdl2-cs\2.0.0\content\net20\SDL2-CS\*.cs" Link="SDL2-CS\%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IOEmulator.Lib\IOEmulator.csproj" />
+    <ProjectReference Include="..\IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
+  </ItemGroup>
+  <!-- Exclude SDL sound driver (uses newer SDL2 APIs not present in 2.0.0) -->
+  <ItemGroup>
+    <Compile Remove="SdlSoundDriver.cs" />
+  </ItemGroup>
+  <!-- If you place SDL2.dll at ../ThirdParty/SDL2/win-x64/SDL2.dll, copy it to output automatically -->
+  <ItemGroup Condition="Exists('..\ThirdParty\SDL2\win-x64\SDL2.dll')">
+    <None Include="..\ThirdParty\SDL2\win-x64\SDL2.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

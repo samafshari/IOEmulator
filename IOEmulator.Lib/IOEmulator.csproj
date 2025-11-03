@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Neat</RootNamespace>
@@ -13,6 +13,14 @@
     <EmbeddedResource Include="Fonts\IBM9x14.bin" />
     <EmbeddedResource Include="Fonts\IBM8x16.bin" />
     <EmbeddedResource Include="Fonts\IBM9x16.bin" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="VramSkiaRenderer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="QBASIC.cs" />
   </ItemGroup>
 
 </Project>

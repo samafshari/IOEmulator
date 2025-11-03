@@ -38,9 +38,39 @@ public class QBasicApi
         io.PutString(s);
     }
 
+    // INKEY$ - non-blocking; returns "" if no key; returns 1-char string for printable keys
+    // Extended keys are returned as "\0" + scancode in classic QB; here we return "" for non-printables for now.
+    public string INKEY()
+    {
+        KeyEvent ev;
+        if (io.TryReadKey(out ev))
+        {
+            if (ev.Char.HasValue && ev.Type == KeyEventType.Down)
+            {
+                return ev.Char.Value.ToString();
+            }
+        }
+        return string.Empty;
+    }
+
     public void CLS()
     {
         io.Cls();
+    }
+
+    // SLEEP [seconds]
+    // Without seconds: wait until any key is pressed
+    // With seconds: wait up to that many seconds or until key press
+    public void SLEEP(int? seconds = null)
+    {
+        if (seconds == null)
+        {
+            io.WaitForKey();
+            return;
+        }
+        using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(seconds.Value));
+        try { io.WaitForKey(cts.Token); }
+        catch (OperationCanceledException) { /* timeout -> continue */ }
     }
 
     // VIEW (pixel coordinates)

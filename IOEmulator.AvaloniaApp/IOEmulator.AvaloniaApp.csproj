@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Neat.UI</RootNamespace>
+    <ApplicationIcon></ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+  <PackageReference Include="Avalonia" Version="11.2.0" />
+  <PackageReference Include="Avalonia.Desktop" Version="11.2.0" />
+  <PackageReference Include="Avalonia.Skia" Version="11.2.0" />
+  <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.0" />
+    <PackageReference Include="Classic.Avalonia.Theme" Version="11.2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IOEmulator.Lib\IOEmulator.csproj" />
+    <ProjectReference Include="..\IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
+    <ProjectReference Include="..\IOEmulator.Skia\IOEmulator.Skia.csproj" />
+  </ItemGroup>
+</Project>

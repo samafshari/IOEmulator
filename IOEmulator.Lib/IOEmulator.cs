@@ -1,4 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Neat;
 
@@ -56,6 +58,13 @@ public class IOEmulator
     public int TurtleX;
     public int TurtleY;
 
+    // ===== Input subsystem =====
+    private readonly ConcurrentQueue<KeyEvent> _keyQueue = new();
+    private readonly AutoResetEvent _keySignal = new(false);
+    public event Action<KeyEvent>? KeyReceived;
+    // Optional external provider (host) to poll keys if queue is empty
+    public ReadKeyDelegate? ExternalReadKey;
+
     public IOEmulator()
     {
         LoadQBasicScreenMode(0);
@@ -76,6 +85,8 @@ public class IOEmulator
         CursorY = 0;
         TurtleX = 0;
         TurtleY = 0;
+        ResetView();
+        ResetWindow();
     }
 
     public void LoadQBasicScreenMode(int modeIndex)
@@ -225,6 +236,43 @@ public class IOEmulator
         ClearPixelBuffer();
         CursorX = 0;
         CursorY = 0;
+    }
+
+    // ===== Input API =====
+    public void InjectKey(in KeyEvent ev)
+    {
+        _keyQueue.Enqueue(ev);
+        _keySignal.Set();
+        KeyReceived?.Invoke(ev);
+    }
+
+    public bool TryReadKey(out KeyEvent ev)
+    {
+        if (_keyQueue.TryDequeue(out ev)) return true;
+        if (ExternalReadKey != null)
+        {
+            var ext = ExternalReadKey();
+            if (ext.HasValue)
+            {
+                ev = ext.Value;
+                return true;
+            }
+        }
+        ev = default;
+        return false;
+    }
+
+    public KeyEvent WaitForKey(CancellationToken cancellationToken = default)
+    {
+        if (TryReadKey(out var evImmediate)) return evImmediate;
+        while (true)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException(cancellationToken);
+            // Wait until signaled or periodically poll external
+            _keySignal.WaitOne(10);
+            if (TryReadKey(out var ev)) return ev;
+        }
     }
 
     public void LocateCursor(int col, int row)

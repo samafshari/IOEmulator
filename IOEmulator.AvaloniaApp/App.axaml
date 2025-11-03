@@ -1,0 +1,9 @@
+<Application xmlns="https://github.com/avaloniaui"
+                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                         xmlns:classic="using:Classic.Avalonia.Theme"
+                          x:Class="Neat.UI.App"
+                          RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <classic:ClassicTheme />
+    </Application.Styles>
+</Application>
