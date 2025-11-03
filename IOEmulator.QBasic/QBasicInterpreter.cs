@@ -785,6 +785,30 @@ public class QBasicInterpreter
                     }
                     return 255;
                 }
+                if (tok.Equals("SIN", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after SIN");
+                    i++; int angle = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after SIN"); i++;
+                    return (int)(Math.Sin(angle * Math.PI / 180.0) * 100); // Convert to degrees and scale
+                }
+                if (tok.Equals("COS", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after COS");
+                    i++; int angle = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after COS"); i++;
+                    return (int)(Math.Cos(angle * Math.PI / 180.0) * 100); // Convert to degrees and scale
+                }
+                if (tok.Equals("SQR", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after SQR");
+                    i++; int value = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after SQR"); i++;
+                    return (int)Math.Sqrt(Math.Abs(value)); // Square root, absolute value to handle negative inputs
+                }
+                if (tok.Equals("ATN", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after ATN");
+                    i++; int value = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after ATN"); i++;
+                    return (int)(Math.Atan(value / 100.0) * 180.0 / Math.PI); // Convert from scaled value back to degrees
+                }
                 // variable
                 i++; return GetInt(tok);
             }

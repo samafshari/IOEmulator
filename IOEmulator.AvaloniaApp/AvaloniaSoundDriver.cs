@@ -6,7 +6,7 @@ using System.Threading;
 
 namespace Neat.UI;
 
-public sealed class AvaloniaSoundDriver : ISoundDriver
+public sealed class AvaloniaSoundDriver : ISoundDriver, IDisposable
 {
     // Simple QBASIC-like PLAY parser and synchronous player using Console.Beep on Windows
     private sealed class MusicState
@@ -15,6 +15,9 @@ public sealed class AvaloniaSoundDriver : ISoundDriver
         public int DefaultLen = 4; // L (denominator), e.g., 4 = quarter
         public int Octave = 4;     // O
     }
+
+    private readonly object _audioLock = new object();
+    private WaveOutEvent? _waveOut;
 
     public void Beep()
     {
@@ -88,20 +91,29 @@ public sealed class AvaloniaSoundDriver : ISoundDriver
         }
     }
 
-    private static void TryBeep(int f, int d)
+    private void TryBeep(int f, int d)
     {
         // Use shared-mode waveOut (WaveOutEvent) for broad compatibility and easy capture by other apps
         try
         {
             int sampleRate = 44100;
-            using var waveOut = new WaveOutEvent { DesiredLatency = 60 };
-            using var tone = new SineToneProvider(frequency: f, durationMs: d, sampleRate: sampleRate);
-            waveOut.Init(tone);
-            using var done = new ManualResetEventSlim(false);
-            waveOut.PlaybackStopped += (_, __) => done.Set();
-            waveOut.Play();
-            // Wait until provider completes
-            done.Wait(TimeSpan.FromMilliseconds(Math.Max(d + 100, 200)));
+            SineToneProvider? tone = null;
+            ManualResetEventSlim? done = null;
+            EventHandler<StoppedEventArgs>? handler = null;
+            lock (_audioLock)
+            {
+                _waveOut ??= new WaveOutEvent { DesiredLatency = 60 };
+                tone = new SineToneProvider(frequency: f, durationMs: d, sampleRate: sampleRate);
+                _waveOut.Init(tone);
+                done = new ManualResetEventSlim(false);
+                handler = (_, __) => done.Set();
+                _waveOut.PlaybackStopped += handler;
+                _waveOut.Play();
+            }
+            // Wait until provider completes (outside lock)
+            done!.Wait(TimeSpan.FromMilliseconds(Math.Max(d + 100, 200)));
+            // Detach handler
+            try { lock (_audioLock) { if (_waveOut != null && handler != null) _waveOut.PlaybackStopped -= handler; } } catch { }
         }
         catch
         {
@@ -156,12 +168,15 @@ public sealed class AvaloniaSoundDriver : ISoundDriver
         private readonly int _totalSamples;
         private int _samplesGenerated;
         private double _phase;
+        private readonly int _fadeSamples;
 
         public SineToneProvider(int frequency, int durationMs, int sampleRate = 44100)
         {
             _format = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 1);
             _freq = Math.Max(1, frequency);
             _totalSamples = (int)Math.Max(1, Math.Round(durationMs / 1000.0 * sampleRate));
+            // 2ms linear fade in/out to avoid clicks
+            _fadeSamples = Math.Max(1, (int)(0.002 * sampleRate));
         }
 
         public WaveFormat WaveFormat => _format;
@@ -174,7 +189,20 @@ public sealed class AvaloniaSoundDriver : ISoundDriver
             double sampleRate = _format.SampleRate;
             for (int n = 0; n < samplesToWrite; n++)
             {
-                buffer[offset + n] = (float)(_amplitude * Math.Sin(_phase));
+                float env;
+                int globalIndex = _samplesGenerated + n;
+                if (globalIndex < _fadeSamples)
+                {
+                    env = (float)globalIndex / _fadeSamples;
+                }
+                else if (globalIndex > _totalSamples - _fadeSamples)
+                {
+                    int remain = _totalSamples - globalIndex;
+                    env = Math.Max(0f, (float)remain / _fadeSamples);
+                }
+                else env = 1f;
+
+                buffer[offset + n] = (float)(_amplitude * env * Math.Sin(_phase));
                 _phase += 2 * Math.PI * _freq / sampleRate;
             }
             _samplesGenerated += samplesToWrite;
@@ -182,5 +210,19 @@ public sealed class AvaloniaSoundDriver : ISoundDriver
         }
 
         public void Dispose() { /* nothing to dispose */ }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            lock (_audioLock)
+            {
+                _waveOut?.Stop();
+                _waveOut?.Dispose();
+                _waveOut = null;
+            }
+        }
+        catch { }
     }
 }
