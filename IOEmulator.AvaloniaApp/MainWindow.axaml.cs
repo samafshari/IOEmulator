@@ -15,12 +15,15 @@ public partial class MainWindow : Window
     private readonly IOEmulator _io = new IOEmulator();
     private readonly QBasicApi _qb;
     private System.Threading.CancellationTokenSource? _runCts;
+    private QBasicInterpreter? _currentInterp;
     private Image? _image;
     private readonly DispatcherTimer? _timer;
     private WriteableBitmap? _wbmp;
     private bool _loggedOnce = false;
     private MenuItem? _samplesMenu;
+    private MenuItem? _speedMenu;
     private string _currentSample = "GUESS";
+    private double _currentSpeed = 1.0;
 
     public MainWindow()
     {
@@ -31,6 +34,7 @@ public partial class MainWindow : Window
         // Find UI elements
         _image = this.FindControl<Image>("vramImage");
         _samplesMenu = this.FindControl<MenuItem>("samplesMenu");
+        _speedMenu = this.FindControl<MenuItem>("speedMenu");
         if (_image != null)
         {
             RenderOptions.SetBitmapInterpolationMode(_image, BitmapInterpolationMode.None);
@@ -40,6 +44,13 @@ public partial class MainWindow : Window
         try
         {
             PopulateSamplesMenu();
+        }
+        catch { /* ignore menu population issues */ }
+
+        // Populate Speed menu
+        try
+        {
+            PopulateSpeedMenu();
         }
         catch { /* ignore menu population issues */ }
 
@@ -71,6 +82,48 @@ public partial class MainWindow : Window
     _samplesMenu.ItemsSource = items;
     }
 
+    private void PopulateSpeedMenu()
+    {
+        if (_speedMenu == null) return;
+        _speedMenu.ItemsSource = null;
+        var items = new System.Collections.Generic.List<MenuItem>();
+        
+        var speeds = new[]
+        {
+            (0.1, "10% (Very Slow)"),
+            (0.25, "25% (Slow)"),
+            (0.5, "50% (Half Speed)"),
+            (0.75, "75%"),
+            (1.0, "100% (Normal)"),
+            (1.5, "150%"),
+            (2.0, "200% (2x)"),
+            (3.0, "300% (3x)"),
+            (5.0, "500% (5x)"),
+            (10.0, "1000% (10x)"),
+            (20.0, "2000% (20x)"),
+            (50.0, "5000% (50x)"),
+            (100.0, "10000% (100x - Maximum)")
+        };
+
+        foreach (var (speed, label) in speeds)
+        {
+            var mi = new MenuItem { Header = label };
+            double capturedSpeed = speed;
+            mi.Click += (_, __) => SetSpeed(capturedSpeed);
+            items.Add(mi);
+        }
+        _speedMenu.ItemsSource = items;
+    }
+
+    private void SetSpeed(double speed)
+    {
+        _currentSpeed = speed;
+        if (_currentInterp != null)
+        {
+            _currentInterp.SpeedFactor = speed;
+        }
+    }
+
     private void StartSample(string sample)
     {
         _currentSample = sample;
@@ -81,7 +134,11 @@ public partial class MainWindow : Window
         try
         {
             var src = QBasicSamples.Load(sample);
-            var interp = new QBasicInterpreter(_qb);
+            var interp = new QBasicInterpreter(_qb)
+            {
+                SpeedFactor = _currentSpeed
+            };
+            _currentInterp = interp;
             _ = System.Threading.Tasks.Task.Run(() =>
             {
                 try { interp.Run(src, _runCts.Token); }

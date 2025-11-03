@@ -538,8 +538,20 @@ public class QBasicInterpreter
     {
         if (tokens.Count == 1)
         {
-            // Block on emulator key wait directly to avoid any scheduling races
-            qb.Emulator.WaitForKey(ct);
+            // Yield with speed-adjusted delay to control execution speed
+            int yieldMs = (int)(10 / SpeedFactor);
+            if (yieldMs > 0)
+            {
+                using var cts = new CancellationTokenSource(yieldMs);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
+                try { qb.Emulator.WaitForKey(linked.Token); }
+                catch (OperationCanceledException) { /* timeout */ }
+            }
+            else
+            {
+                // For very high speed, just yield briefly
+                Thread.Yield();
+            }
         }
         else
         {
@@ -850,9 +862,11 @@ public class QBasicInterpreter
 
     private void DoSOUND(List<string> tokens)
     {
+        // SOUND freq, duration: evaluate both as integer expressions
         int i = 1;
-        int f = ParseIntSkip(tokens, ref i);
-        int d = ParseIntSkip(tokens, ref i);
+        int f = ParseIntExprAdv(tokens, ref i);
+        if (i < tokens.Count && tokens[i] == ",") i++;
+        int d = ParseIntExprAdv(tokens, ref i);
         qb.SOUND(f, d);
     }
 

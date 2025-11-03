@@ -27,6 +27,7 @@ public sealed class AvaloniaSoundDriver : ISoundDriver, IDisposable
     public void PlayTone(int frequencyHz, int durationMs)
     {
         if (frequencyHz <= 0 || durationMs <= 0) return;
+        System.Diagnostics.Debug.WriteLine($"AvaloniaSoundDriver: PlayTone({frequencyHz}Hz, {durationMs}ms)");
         TryBeep(frequencyHz, durationMs);
     }
 
@@ -96,27 +97,38 @@ public sealed class AvaloniaSoundDriver : ISoundDriver, IDisposable
         // Use shared-mode waveOut (WaveOutEvent) for broad compatibility and easy capture by other apps
         try
         {
+            System.Diagnostics.Debug.WriteLine($"AvaloniaSoundDriver: TryBeep start {f}Hz {d}ms");
             int sampleRate = 44100;
             SineToneProvider? tone = null;
             ManualResetEventSlim? done = null;
             EventHandler<StoppedEventArgs>? handler = null;
             lock (_audioLock)
             {
-                _waveOut ??= new WaveOutEvent { DesiredLatency = 60 };
+                if (_waveOut == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("AvaloniaSoundDriver: Creating new WaveOutEvent");
+                    _waveOut = new WaveOutEvent { DesiredLatency = 60 };
+                }
                 tone = new SineToneProvider(frequency: f, durationMs: d, sampleRate: sampleRate);
                 _waveOut.Init(tone);
                 done = new ManualResetEventSlim(false);
-                handler = (_, __) => done.Set();
+                handler = (_, __) => { System.Diagnostics.Debug.WriteLine("AvaloniaSoundDriver: Playback stopped"); done.Set(); };
                 _waveOut.PlaybackStopped += handler;
                 _waveOut.Play();
+                System.Diagnostics.Debug.WriteLine($"AvaloniaSoundDriver: Play started, waiting for completion...");
             }
             // Wait until provider completes (outside lock)
-            done!.Wait(TimeSpan.FromMilliseconds(Math.Max(d + 100, 200)));
+            bool completed = done!.Wait(TimeSpan.FromMilliseconds(Math.Max(d + 100, 200)));
+            System.Diagnostics.Debug.WriteLine($"AvaloniaSoundDriver: Wait completed={completed}");
             // Detach handler
             try { lock (_audioLock) { if (_waveOut != null && handler != null) _waveOut.PlaybackStopped -= handler; } } catch { }
+            done.Dispose();
         }
-        catch
+        catch (Exception ex)
         {
+            // Log to Debug for diagnostics
+            System.Diagnostics.Debug.WriteLine($"AvaloniaSoundDriver: TryBeep failed with {ex.GetType().Name}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Stack: {ex.StackTrace}");
             // As a fallback, try Console.Beep (Windows only; may be inaudible or exclusive on some systems)
             try { if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Console.Beep(f, d); } catch { }
         }

@@ -6,6 +6,7 @@
     <DockPanel>
         <Menu x:Name="mainMenu" DockPanel.Dock="Top">
             <MenuItem Header="_Samples" x:Name="samplesMenu" />
+            <MenuItem Header="_Speed" x:Name="speedMenu" />
         </Menu>
         <Border x:Name="container" Background="#000000" ClipToBounds="True">
             <!-- VRAM image overlay (code-behind will set Source) -->

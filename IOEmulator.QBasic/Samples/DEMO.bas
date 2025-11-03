@@ -12,7 +12,7 @@ CLS
 T = 0
 
 MAIN:
-CLS
+'CLS
 
 ' --- Plasma effect (blocky for speed) ---
 Y = 0
