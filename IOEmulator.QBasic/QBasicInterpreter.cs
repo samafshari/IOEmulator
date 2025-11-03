@@ -31,6 +31,13 @@ public class QBasicInterpreter
     private Random _rng = new Random();
     private bool _didTextOutput = false;
 
+    /// <summary>
+    /// Speed factor for execution and delays. 
+    /// 1.0 = normal speed, 2.0 = double speed (half delays), 0.5 = half speed (double delays).
+    /// Affects SLEEP and internal iteration throttling for fast tests.
+    /// </summary>
+    public double SpeedFactor { get; set; } = 1.0;
+
     public QBasicInterpreter(QBasicApi api)
     {
         qb = api ?? throw new ArgumentNullException(nameof(api));
@@ -117,6 +124,19 @@ public class QBasicInterpreter
             {
                 label = trimmed[..^1].Trim();
                 code = string.Empty;
+            }
+
+            // If there's a label with no code, still register an empty line to mark the label position
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                if (!string.IsNullOrEmpty(label))
+                {
+                    var line = new Line { Label = label, Code = string.Empty, Index = ir.Lines.Count };
+                    if (!ir.LabelToIndex.TryAdd(label!, line.Index))
+                        throw new InvalidOperationException($"Duplicate label: {label}");
+                    ir.Lines.Add(line);
+                }
+                continue;
             }
 
             // Split the remaining code into multiple statements separated by top-level ':'
@@ -212,28 +232,43 @@ public class QBasicInterpreter
                         qb.LOCATE(r, c); ip++; break;
                     }
                 case "PRINT":
-                    if (tokens.Count > 1)
                     {
+                        // QBASIC semantics: PRINT appends a newline unless a trailing ';' is present.
+                        bool suppressNewline = tokens.Count > 1 && tokens[^1] == ";";
+                        if (tokens.Count == 1)
+                        {
+                            // bare PRINT -> just a newline
+                            qb.PRINT("\r\n"); _didTextOutput = true; ip++; break;
+                        }
                         if (tokens[1].Equals("INKEY$", StringComparison.OrdinalIgnoreCase))
                         {
                             var s = qb.INKEY();
-                            if (s == "\b") { qb.PRINT("\b"); qb.PRINT(" "); qb.PRINT("\b"); ip++; break; }
-                            qb.PRINT(s); _didTextOutput = true; ip++; break;
+                            if (s == "\b") { qb.PRINT("\b"); qb.PRINT(" "); qb.PRINT("\b"); _didTextOutput = true; ip++; break; }
+                            qb.PRINT(s); _didTextOutput = true; if (!suppressNewline) qb.PRINT("\r\n"); ip++; break;
                         }
                         if (tokens[1].Equals("LASTKEY$", StringComparison.OrdinalIgnoreCase))
                         {
-                            if (_lastInkey == "\b") { qb.PRINT("\b"); qb.PRINT(" "); qb.PRINT("\b"); ip++; break; }
-                            qb.PRINT(_lastInkey); _didTextOutput = true; ip++; break;
+                            if (_lastInkey == "\b") { qb.PRINT("\b"); qb.PRINT(" "); qb.PRINT("\b"); _didTextOutput = true; ip++; break; }
+                            qb.PRINT(_lastInkey); _didTextOutput = true; if (!suppressNewline) qb.PRINT("\r\n"); ip++; break;
                         }
                         // PRINT variable or number
                         if (IsIdentifier(tokens[1]))
                         {
                             var name = tokens[1];
-                            if (name.EndsWith("$")) { qb.PRINT(GetStr(name)); _didTextOutput = true; ip++; break; }
-                            else { qb.PRINT(GetInt(name).ToString(CultureInfo.InvariantCulture)); _didTextOutput = true; ip++; break; }
+                            if (name.EndsWith("$")) { qb.PRINT(GetStr(name)); _didTextOutput = true; if (!suppressNewline) qb.PRINT("\r\n"); ip++; break; }
+                            else { qb.PRINT(GetInt(name).ToString(CultureInfo.InvariantCulture)); _didTextOutput = true; if (!suppressNewline) qb.PRINT("\r\n"); ip++; break; }
+                        }
+                        // Default: print remainder as string; if suppressing newline, drop trailing ';' from output
+                        if (suppressNewline)
+                        {
+                            var content = ParseStringOrRemainder(tokens.Take(tokens.Count - 1).ToList(), 1);
+                            qb.PRINT(content); _didTextOutput = true; ip++; break;
+                        }
+                        else
+                        {
+                            qb.PRINT(ParseStringOrRemainder(tokens, 1)); _didTextOutput = true; qb.PRINT("\r\n"); ip++; break;
                         }
                     }
-                    qb.PRINT(ParseStringOrRemainder(tokens, 1)); _didTextOutput = true; ip++; break;
                 case "LET":
                     DoAssignment(tokens, 1); ip++; break;
                 case "PSET":
@@ -294,8 +329,8 @@ public class QBasicInterpreter
     private int DoIF(List<string> tokens, ProgramIR program, int currentIp)
     {
         // Two forms supported:
-        // 1) IF INKEY$ <> "" THEN [GOTO label|END|PRINT INKEY$]
-        // 2) IF <intExpr> {=|<|>} <intExpr> THEN [GOTO label|END|PRINT "text"]
+        // 1) IF INKEY$ <> "" THEN actions [ELSE actions]
+        // 2) IF <intExpr> {=|<|>|<=|>=|<>} <intExpr> THEN actions [ELSE actions]
         int i = 1;
         if (tokens[i].Equals("INKEY$", StringComparison.OrdinalIgnoreCase))
         {
@@ -305,15 +340,22 @@ public class QBasicInterpreter
             var thenTok1 = Expect(tokens, i++, "THEN");
             _lastInkey = qb.INKEY();
             bool cond1 = (_lastInkey != "");
-            return DoThen(tokens, program, currentIp, i, cond1);
+            int elseIndex = IndexOfToken(tokens, "ELSE", i);
+            if (cond1)
+            {
+                return ExecuteActionList(tokens, program, currentIp, i, elseIndex);
+            }
+            else
+            {
+                if (elseIndex >= 0) return ExecuteActionList(tokens, program, currentIp, elseIndex + 1, -1);
+                return currentIp + 1;
+            }
         }
-        // Numeric compare
-        int left = ParseIntExpr(tokens, i); // may read 1-4 tokens depending on expr
-        // Advance i over left expr tokens: we only supported simple forms so skip until operator
-        while (i < tokens.Count && tokens[i] != "=" && tokens[i] != "<" && tokens[i] != ">") i++;
+    // Numeric compare
+    int left = ParseIntExprAdv(tokens, ref i);
         if (i >= tokens.Count) return currentIp + 1;
         string op = tokens[i++];
-        int right = ParseIntExpr(tokens, i);
+    int right = ParseIntExprAdv(tokens, ref i);
         // move i to THEN
         while (i < tokens.Count && !tokens[i].Equals("THEN", StringComparison.OrdinalIgnoreCase)) i++;
         if (i < tokens.Count && tokens[i].Equals("THEN", StringComparison.OrdinalIgnoreCase)) i++;
@@ -322,21 +364,44 @@ public class QBasicInterpreter
             "=" => left == right,
             "<" => left < right,
             ">" => left > right,
+            "<=" => left <= right,
+            ">=" => left >= right,
+            "<>" => left != right,
             _ => false
         };
-        return DoThen(tokens, program, currentIp, i, cond);
+        int elsePos = IndexOfToken(tokens, "ELSE", i);
+        if (cond)
+        {
+            return ExecuteActionList(tokens, program, currentIp, i, elsePos);
+        }
+        else
+        {
+            if (elsePos >= 0) return ExecuteActionList(tokens, program, currentIp, elsePos + 1, -1);
+            return currentIp + 1;
+        }
+    }
+
+    private static int IndexOfToken(List<string> tokens, string keyword, int start)
+    {
+        for (int k = start; k < tokens.Count; k++)
+        {
+            if (tokens[k].Equals(keyword, StringComparison.OrdinalIgnoreCase)) return k;
+        }
+        return -1;
     }
 
     private int DoThen(List<string> tokens, ProgramIR program, int currentIp, int i, bool cond)
+        => cond ? ExecuteActionList(tokens, program, currentIp, i, -1) : currentIp + 1;
+
+    private int ExecuteActionList(List<string> tokens, ProgramIR program, int currentIp, int startIndex, int endIndex)
     {
-        if (!cond) return currentIp + 1;
-        if (i >= tokens.Count) return currentIp + 1;
-        // Support multiple THEN-actions separated by ':' e.g., PRINT ".." : GOTO 10
-        while (i < tokens.Count)
+        int i = startIndex;
+        int stop = endIndex >= 0 ? endIndex : tokens.Count;
+        while (i < stop)
         {
             // skip separators
-            while (i < tokens.Count && tokens[i] == ":") i++;
-            if (i >= tokens.Count) break;
+            while (i < stop && tokens[i] == ":") i++;
+            if (i >= stop) break;
             var action = tokens[i].ToUpperInvariant();
             if (action == "GOTO")
             {
@@ -347,30 +412,119 @@ public class QBasicInterpreter
             {
                 return program.Lines.Count;
             }
+            if (action == "IF")
+            {
+                int localStop = FindNextSeparator(tokens, i, stop);
+                int jump = ExecuteInlineIF(tokens, program, currentIp, i, localStop);
+                if (jump >= 0) return jump;
+                i = localStop; // advance to next statement separator/end
+                continue;
+            }
             if (action == "PRINT")
             {
-                if (i + 1 < tokens.Count && tokens[i + 1].StartsWith("\""))
+                if (i + 1 < stop && tokens[i + 1].StartsWith("\""))
                 {
-                    qb.PRINT(Unquote(tokens[i + 1])); _didTextOutput = true;
-                    i += 2; // consume PRINT and the string literal
-                    continue;
+                    qb.PRINT(Unquote(tokens[i + 1])); _didTextOutput = true; qb.PRINT("\r\n");
+                    i += 2; continue;
                 }
-                if (i + 1 < tokens.Count && tokens[i + 1].Equals("INKEY$", StringComparison.OrdinalIgnoreCase))
+                if (i + 1 < stop && tokens[i + 1].Equals("INKEY$", StringComparison.OrdinalIgnoreCase))
                 {
                     var s = _lastInkey;
                     if (s == "\b") { qb.PRINT("\b"); qb.PRINT(" "); qb.PRINT("\b"); }
-                    else qb.PRINT(s);
-                    _didTextOutput = true;
-                    i += 2;
-                    continue;
+                    else { qb.PRINT(s); qb.PRINT("\r\n"); }
+                    _didTextOutput = true; i += 2; continue;
                 }
-                // Unknown print form; bail out to avoid infinite loop
+                // Unknown print form; stop processing list to avoid misparse
                 return currentIp + 1;
             }
-            // Unrecognized then-action; stop processing
+            if (action == "PSET")
+            {
+                var sub = tokens.GetRange(i, stop - i);
+                DoPSET(sub);
+                while (i < stop && tokens[i] != ":") i++;
+                continue;
+            }
+            // Assignment inside THEN/ELSE: name = expr
+            if (IsIdentifier(tokens[i]) && i + 1 < stop && tokens[i + 1] == "=")
+            {
+                var sub = tokens.GetRange(i, stop - i);
+                DoAssignment(sub, 0);
+                while (i < stop && tokens[i] != ":") i++;
+                continue;
+            }
             break;
         }
         return currentIp + 1;
+    }
+
+    private static int FindNextSeparator(List<string> tokens, int start, int stop)
+    {
+        for (int k = start; k < stop; k++)
+        {
+            if (tokens[k] == ":") return k;
+        }
+        return stop;
+    }
+
+    // Execute a nested IF inside a statement list; returns jump ip if a control transfer occurs, else -1
+    private int ExecuteInlineIF(List<string> tokens, ProgramIR program, int currentIp, int start, int stop)
+    {
+        int i = start + 1; // skip IF
+        // Support same forms as top-level
+        if (i < stop && tokens[i].Equals("INKEY$", StringComparison.OrdinalIgnoreCase))
+        {
+            i++;
+            var op1 = Expect(tokens, i++, "<>");
+            var rhs1 = Expect(tokens, i++, ExpectStringLiteral: true);
+            if (i < stop && tokens[i].Equals("THEN", StringComparison.OrdinalIgnoreCase)) i++;
+            _lastInkey = qb.INKEY();
+            bool cond1 = (_lastInkey != "");
+            int elsePos = IndexOfTokenBounded(tokens, "ELSE", i, stop);
+            if (cond1)
+            {
+                return ExecuteActionList(tokens, program, currentIp, i, elsePos);
+            }
+            else
+            {
+                if (elsePos >= 0) return ExecuteActionList(tokens, program, currentIp, elsePos + 1, stop);
+                return -1;
+            }
+        }
+        int left = ParseIntExprAdv(tokens, ref i);
+        if (i >= stop) return -1;
+        string op = tokens[i++];
+        int right = ParseIntExprAdv(tokens, ref i);
+        while (i < stop && !tokens[i].Equals("THEN", StringComparison.OrdinalIgnoreCase)) i++;
+        if (i < stop && tokens[i].Equals("THEN", StringComparison.OrdinalIgnoreCase)) i++;
+        bool cond = op switch
+        {
+            "=" => left == right,
+            "<" => left < right,
+            ">" => left > right,
+            "<=" => left <= right,
+            ">=" => left >= right,
+            "<>" => left != right,
+            _ => false
+        };
+        int elsePos2 = IndexOfTokenBounded(tokens, "ELSE", i, stop);
+        if (cond)
+        {
+            return ExecuteActionList(tokens, program, currentIp, i, elsePos2);
+        }
+        else
+        {
+            if (elsePos2 >= 0) return ExecuteActionList(tokens, program, currentIp, elsePos2 + 1, stop);
+            return -1;
+        }
+    }
+
+    private static int IndexOfTokenBounded(List<string> tokens, string keyword, int start, int stop)
+    {
+        for (int k = start; k < stop; k++)
+        {
+            if (tokens[k].Equals(keyword, StringComparison.OrdinalIgnoreCase)) return k;
+        }
+        return -1;
     }
 
     private int ResolveLabel(ProgramIR program, string label)
@@ -391,7 +545,15 @@ public class QBasicInterpreter
         {
             var seconds = ParseInt(tokens, 1);
             if (seconds <= 0) return; // Non-blocking for zero or negative
-            qb.SLEEP(seconds);
+            // Apply speed factor to sleep duration
+            int adjustedMs = (int)(seconds * 1000 / SpeedFactor);
+            if (adjustedMs > 0)
+            {
+                using var cts = new CancellationTokenSource(adjustedMs);
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
+                try { qb.Emulator.WaitForKey(linked.Token); }
+                catch (OperationCanceledException) { /* timeout or external cancel */ }
+            }
         }
     }
 
@@ -410,50 +572,56 @@ public class QBasicInterpreter
 
     private void DoPSET(List<string> tokens)
     {
-        // Accept: PSET (x, y), c   OR  PSET x, y, c
+        // Accept: PSET (x, y), c   OR  PSET x, y, c   where x,y,c are int expressions or identifiers
         int i = 1;
-        if (tokens[i] == "(") i++;
-        int x = ParseIntSkipRaw(tokens, ref i);
-        int y = ParseIntSkip(tokens, ref i);
+        if (i < tokens.Count && tokens[i] == "(") i++;
+        int x = ParseIntExprAdv(tokens, ref i);
+        if (i < tokens.Count && tokens[i] == ",") i++;
+        int y = ParseIntExprAdv(tokens, ref i);
         if (i < tokens.Count && tokens[i] == ")") i++;
         if (i < tokens.Count && tokens[i] == ",") i++;
-        int color = ParseIntSkip(tokens, ref i);
+        int color = ParseIntExprAdv(tokens, ref i);
         qb.PSET(x, y, color);
     }
 
     private void DoLINE(List<string> tokens)
     {
-        // Accept: LINE (x1, y1)-(x2, y2), c  OR LINE x1, y1, x2, y2[, c]
+        // Accept: LINE (x1, y1)-(x2, y2), c  OR LINE x1, y1, x2, y2[, c] with expressions
         int x1, y1, x2, y2;
         int? color = null;
         int i = 1;
-        if (tokens[i] == "(")
+        if (i < tokens.Count && tokens[i] == "(")
         {
             i++;
-            x1 = ParseIntSkipRaw(tokens, ref i);
-            y1 = ParseIntSkip(tokens, ref i);
-            if (tokens[i] == ")") i++;
-            if (tokens[i] == "-") i++;
-            if (tokens[i] == "(") i++;
-            x2 = ParseIntSkipRaw(tokens, ref i);
-            y2 = ParseIntSkip(tokens, ref i);
-            if (tokens[i] == ")") i++;
+            x1 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ",") i++;
+            y1 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ")") i++;
+            if (i < tokens.Count && tokens[i] == "-") i++;
+            if (i < tokens.Count && tokens[i] == "(") i++;
+            x2 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ",") i++;
+            y2 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ")") i++;
             if (i < tokens.Count && tokens[i] == ",")
             {
                 i++;
-                color = ParseIntSkip(tokens, ref i);
+                color = ParseIntExprAdv(tokens, ref i);
             }
         }
         else
         {
-            x1 = ParseIntSkipRaw(tokens, ref i);
-            y1 = ParseIntSkip(tokens, ref i);
-            x2 = ParseIntSkip(tokens, ref i);
-            y2 = ParseIntSkip(tokens, ref i);
+            x1 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ",") i++;
+            y1 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ",") i++;
+            x2 = ParseIntExprAdv(tokens, ref i);
+            if (i < tokens.Count && tokens[i] == ",") i++;
+            y2 = ParseIntExprAdv(tokens, ref i);
             if (i < tokens.Count && tokens[i] == ",")
             {
                 i++;
-                color = ParseIntSkip(tokens, ref i);
+                color = ParseIntExprAdv(tokens, ref i);
             }
         }
         qb.LINE(x1, y1, x2, y2, color);
@@ -472,32 +640,57 @@ public class QBasicInterpreter
                 int j = i + 1;
                 while (j < code.Length)
                 {
-                    if (code[j] == '"') { j++; break; }
+                    if (code[j] == '"')
+                    {
+                        // QBASIC-style escape for quotes: doubled quotes within a string literal
+                        if (j + 1 < code.Length && code[j + 1] == '"')
+                        {
+                            j += 2; // consume the doubled quote and continue inside the string
+                            continue;
+                        }
+                        j++; // closing quote
+                        break;
+                    }
                     j++;
                 }
                 tokens.Add(code[i..j]);
                 i = j;
                 continue;
             }
-            if (",()-:;".IndexOf(c) >= 0)
+            if (",()-:;=+*/<>".IndexOf(c) >= 0)
             {
                 tokens.Add(c.ToString()); i++; continue;
             }
-            // identifier or number or operator
+            // identifier or number
             int k = i;
-            while (k < code.Length && !char.IsWhiteSpace(code[k]) && ",()-:;".IndexOf(code[k]) < 0)
+            while (k < code.Length && !char.IsWhiteSpace(code[k]) && ",()-:;=+*/<>".IndexOf(code[k]) < 0)
                 k++;
             tokens.Add(code[i..k]);
             i = k;
         }
-        // Merge "-" that is used as connector in (x1,y1)-(x2,y2) already handled; operators like <> may be separate, ensure we join if split
+        // Merge two-char operators: <>, <=, >=
         for (int t = 0; t < tokens.Count - 1; t++)
         {
             if (tokens[t] == "<" && tokens[t + 1] == ">")
             {
                 tokens[t] = "<>";
                 tokens.RemoveAt(t + 1);
-                break;
+                t--;
+                continue;
+            }
+            if (tokens[t] == "<" && tokens[t + 1] == "=")
+            {
+                tokens[t] = "<=";
+                tokens.RemoveAt(t + 1);
+                t--;
+                continue;
+            }
+            if (tokens[t] == ">" && tokens[t + 1] == "=")
+            {
+                tokens[t] = ">=";
+                tokens.RemoveAt(t + 1);
+                t--;
+                continue;
             }
         }
         return tokens;
@@ -515,14 +708,15 @@ public class QBasicInterpreter
         // name = expr
         var name = tokens[start];
         if (tokens[start + 1] != "=") throw new InvalidOperationException("Expected '=' in assignment");
+        int idx = start + 2;
         if (name.EndsWith("$"))
         {
-            var value = ParseStringExpr(tokens, start + 2);
+            var value = ParseStringExpr(tokens, idx);
             SetStr(name, value);
         }
         else
         {
-            var value = ParseIntExpr(tokens, start + 2);
+            var value = ParseIntExprAdv(tokens, ref idx);
             SetInt(name, value);
         }
     }
@@ -536,37 +730,93 @@ public class QBasicInterpreter
         return string.Empty;
     }
 
-    private int ParseIntExpr(List<string> tokens, int index)
+    private int ParseIntExprAdv(List<string> tokens, ref int index)
     {
-        if (index >= tokens.Count) return 0;
-        var t = tokens[index];
-        if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) return n;
-        if (IsIdentifier(t))
+        // Recursive-descent with precedence: factor (*,/), term (+,-)
+        int ParseFactor(ref int i)
         {
-            if (t.Equals("VAL", StringComparison.OrdinalIgnoreCase))
+            if (i >= tokens.Count) return 0;
+            var tok = tokens[i];
+            if (tok == "+") { i++; return ParseFactor(ref i); }
+            if (tok == "-") { i++; return -ParseFactor(ref i); }
+            if (tok == "(") { i++; var val = ParseExpr(ref i); if (i < tokens.Count && tokens[i] == ")") i++; return val; }
+            // number
+            if (int.TryParse(tok, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)) { i++; return n; }
+            // identifier or function
+            if (IsIdentifier(tok))
             {
-                // Expect: VAL ( name$ )
-                if (tokens[index + 1] != "(") throw new InvalidOperationException("Expected '(' after VAL");
-                var name = tokens[index + 2];
-                if (!name.EndsWith("$")) throw new InvalidOperationException("VAL expects string variable");
-                if (tokens[index + 3] != ")") throw new InvalidOperationException("Expected ')' after VAL argument");
-                var s = GetStr(name);
-                if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)) return v;
-                return 0;
+                if (tok.Equals("VAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after VAL");
+                    i++; var name = tokens[i++]; if (!name.EndsWith("$")) throw new InvalidOperationException("VAL expects string variable");
+                    if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after VAL argument"); i++;
+                    var s = GetStr(name);
+                    return int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+                }
+                if (tok.Equals("RND", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after RND");
+                    i++; int nmax = ParseTerm(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after RND"); i++;
+                    if (nmax <= 0) nmax = 1; return 1 + _rng.Next(nmax);
+                }
+                if (tok.Equals("PX", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after PX");
+                    i++; int x = ParseExpr(ref i); if (tokens[i] != ",") throw new InvalidOperationException("Expected ',' in PX");
+                    i++; int y = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after PX"); i++;
+                    // Return 0 if background, 1 otherwise (also out-of-bounds treated as 1)
+                    if (x < 0 || y < 0 || x >= qb.Emulator.ResolutionW || y >= qb.Emulator.ResolutionH) return 1;
+                    var rgb = qb.POINT(x, y);
+                    var bg = qb.Emulator.GetColor(qb.Emulator.BackgroundColorIndex);
+                    return (rgb.R == bg.R && rgb.G == bg.G && rgb.B == bg.B) ? 0 : 1;
+                }
+                if (tok.Equals("PC", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; if (tokens[i] != "(") throw new InvalidOperationException("Expected '(' after PC");
+                    i++; int x = ParseExpr(ref i); if (tokens[i] != ",") throw new InvalidOperationException("Expected ',' in PC");
+                    i++; int y = ParseExpr(ref i); if (tokens[i] != ")") throw new InvalidOperationException("Expected ')' after PC"); i++;
+                    if (x < 0 || y < 0 || x >= qb.Emulator.ResolutionW || y >= qb.Emulator.ResolutionH) return 255;
+                    var rgb = qb.POINT(x, y);
+                    // Find palette index match (exact)
+                    for (int pi = 0; pi < qb.Emulator.Palette.Length; pi++)
+                    {
+                        var c = qb.Emulator.GetColor(pi);
+                        if (c.R == rgb.R && c.G == rgb.G && c.B == rgb.B) return pi;
+                    }
+                    return 255;
+                }
+                // variable
+                i++; return GetInt(tok);
             }
-            if (t.Equals("RND", StringComparison.OrdinalIgnoreCase))
-            {
-                // RND(n) returns 1..n
-                if (tokens[index + 1] != "(") throw new InvalidOperationException("Expected '(' after RND");
-                int nmax = ParseIntExpr(tokens, index + 2);
-                // find matching ')': we only support simple arg
-                // ignore tokens[index+3] == ")"
-                if (nmax <= 0) nmax = 1;
-                return 1 + _rng.Next(nmax);
-            }
-            return GetInt(t);
+            // unknown
+            i++; return 0;
         }
-        return 0;
+
+        int ParseTerm(ref int i)
+        {
+            int val = ParseFactor(ref i);
+            while (i < tokens.Count && (tokens[i] == "*" || tokens[i] == "/"))
+            {
+                string op = tokens[i++];
+                int rhs = ParseFactor(ref i);
+                val = op == "*" ? val * rhs : (rhs == 0 ? 0 : val / rhs);
+            }
+            return val;
+        }
+
+        int ParseExpr(ref int i)
+        {
+            int val = ParseTerm(ref i);
+            while (i < tokens.Count && (tokens[i] == "+" || tokens[i] == "-"))
+            {
+                string op = tokens[i++];
+                int rhs = ParseTerm(ref i);
+                val = op == "+" ? val + rhs : val - rhs;
+            }
+            return val;
+        }
+
+        return ParseExpr(ref index);
     }
 
     private void SetInt(string name, int value) => _ints[name] = value;
@@ -606,7 +856,12 @@ public class QBasicInterpreter
     private static string Unquote(string s)
     {
         if (s.Length >= 2 && s[0] == '"' && s[^1] == '"')
-            return s.Substring(1, s.Length - 2);
+        {
+            var inner = s.Substring(1, s.Length - 2);
+            // Replace QBASIC doubled quotes with a single quote character
+            inner = inner.Replace("\"\"", "\"");
+            return inner;
+        }
         return s;
     }
 
