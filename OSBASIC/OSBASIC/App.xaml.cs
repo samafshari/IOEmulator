@@ -9,6 +9,7 @@ namespace OSBASIC
 {
     public sealed partial class App : Application
     {
+        public static MainPage CurrentMainPage { get; private set; }
         public App()
         {
             this.InitializeComponent();
@@ -16,6 +17,7 @@ namespace OSBASIC
             // Enter construction logic here...
 
             var mainPage = new MainPage();
+            CurrentMainPage = mainPage;
             Window.Current.Content = mainPage;
         }
     }

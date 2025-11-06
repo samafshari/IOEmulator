@@ -1,58 +1,58 @@
-﻿using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Rendering;
-
-using OpenSilver.WebAssembly;
-
-using System.Threading.Tasks;
-using System.Threading;
 using System;
-using Neat;
 using System.Linq;
-using Microsoft.JSInterop;
+using System.Threading;
+using System.Threading.Tasks;
+using Neat;
 
-namespace OSBASIC.Browser.Pages
+namespace OSBASIC.Simulator
 {
-    [Route("/")]
-    public class Index : ComponentBase
+    internal static class Host
     {
-        [Inject] public IJSRuntime JS { get; set; }
-        private IOEmulator _io;
-        private QBasicApi _qb;
-        private QBasicInterpreter _interp;
-        private CancellationTokenSource _cts;
-        private System.Timers.Timer _timer;
-        private double _speedFactor = 1.0;
+        private static IOEmulator _io;
+        private static QBasicApi _qb;
+        private static QBasicInterpreter _interp;
+        private static CancellationTokenSource _cts;
+        private static System.Timers.Timer _timer;
+        private static double _speedFactor = 1.0;
         private static int _lastPixelCount = 0;
-        private static int[] _argb = new int[0];
+        private static int[] _argb = Array.Empty<int>();
+        private static bool _initialized = false;
 
-        protected override void BuildRenderTree(RenderTreeBuilder __builder)
+        public static void InitializeWhenReady()
         {
+            if (_initialized) return;
+            _initialized = true;
+            // Poll on a background task until the OpenSilver page is ready
+            Task.Run(async () =>
+            {
+                OSBASIC.MainPage page = null;
+                for (int i = 0; i < 200; i++) // up to ~4s
+                {
+                    page = OSBASIC.App.CurrentMainPage;
+                    if (page != null) break;
+                    await Task.Delay(20);
+                }
+                if (page == null) return;
+
+                // Switch to UI thread for UI interactions
+                page.Dispatcher.BeginInvoke(() => Initialize(page));
+            });
         }
 
-        protected async override Task OnInitializedAsync()
+        private static void Initialize(OSBASIC.MainPage page)
         {
-            await base.OnInitializedAsync();
-            await Runner.RunApplicationAsync<OSBASIC.App>();
-
-            // Get the OpenSilver page instance
-            var page = OSBASIC.App.CurrentMainPage;
-            if (page == null) return;
-
-            // Create emulator and QBASIC interpreter in Browser host (can reference net8 libs)
+            // Create emulator and QBASIC interpreter
             _io = new IOEmulator();
-            _qb = new QBasicApi(_io, new WebAudioSoundDriver(JS));
+            _qb = new QBasicApi(_io); // default ConsoleBeepSoundDriver on Windows
 
             // Wire input from OpenSilver page to emulator
             page.PrintableChar += ch => _io.InjectKey(new KeyEvent(KeyEventType.Down, KeyCode.Unknown, ch));
             page.SpecialKey += (key, shift, ctrl, alt, isDown) =>
             {
-                var code = MapKey(key);
+                var code = MapKeyName(key.ToString());
                 _io.InjectKey(new KeyEvent(isDown ? KeyEventType.Down : KeyEventType.Up, code, null, shift, ctrl, alt));
             };
-            page.MouseStateChanged += (x, y, left, right, middle) =>
-            {
-                _io.SetMouseState(x, y, left, right, middle);
-            };
+            page.MouseStateChanged += (x, y, left, right, middle) => _io.SetMouseState(x, y, left, right, middle);
 
             // Populate samples in UI
             var names = QBasicSamples.List().ToArray();
@@ -73,7 +73,6 @@ namespace OSBASIC.Browser.Pages
             {
                 try
                 {
-                    // Resize if needed on UI thread
                     if (_io.ResolutionW * _io.ResolutionH != _lastPixelCount)
                     {
                         _lastPixelCount = _io.ResolutionW * _io.ResolutionH;
@@ -83,7 +82,6 @@ namespace OSBASIC.Browser.Pages
                     }
                     if (!_io.Dirty) return;
                     ConvertToArgb(_io.PixelBuffer, _argb);
-                    // Push frame on UI thread
                     page.Dispatcher.BeginInvoke(() => page.UpdateFrame(_argb));
                     _io.ResetDirty();
                 }
@@ -93,7 +91,7 @@ namespace OSBASIC.Browser.Pages
             _timer.Enabled = true;
         }
 
-        private void StartProgram(OSBASIC.MainPage page, string name)
+        private static void StartProgram(OSBASIC.MainPage page, string name)
         {
             try { _cts?.Cancel(); } catch { }
             try { _cts?.Dispose(); } catch { }
@@ -109,21 +107,21 @@ namespace OSBASIC.Browser.Pages
             });
         }
 
-        private static KeyCode MapKey(System.Windows.Input.Key key)
+        private static KeyCode MapKeyName(string key)
         {
             switch (key)
             {
-                case System.Windows.Input.Key.Enter: return KeyCode.Enter;
-                case System.Windows.Input.Key.Back: return KeyCode.Backspace;
-                case System.Windows.Input.Key.Delete: return KeyCode.Delete;
-                case System.Windows.Input.Key.Home: return KeyCode.Home;
-                case System.Windows.Input.Key.End: return KeyCode.End;
-                case System.Windows.Input.Key.Tab: return KeyCode.Tab;
-                case System.Windows.Input.Key.Escape: return KeyCode.Escape;
-                case System.Windows.Input.Key.Left: return KeyCode.Left;
-                case System.Windows.Input.Key.Right: return KeyCode.Right;
-                case System.Windows.Input.Key.Up: return KeyCode.Up;
-                case System.Windows.Input.Key.Down: return KeyCode.Down;
+                case "Enter": return KeyCode.Enter;
+                case "Back": return KeyCode.Backspace;
+                case "Delete": return KeyCode.Delete;
+                case "Home": return KeyCode.Home;
+                case "End": return KeyCode.End;
+                case "Tab": return KeyCode.Tab;
+                case "Escape": return KeyCode.Escape;
+                case "Left": return KeyCode.Left;
+                case "Right": return KeyCode.Right;
+                case "Up": return KeyCode.Up;
+                case "Down": return KeyCode.Down;
                 default: return KeyCode.Unknown;
             }
         }
@@ -138,14 +136,5 @@ namespace OSBASIC.Browser.Pages
                 dst[i] = (255 << 24) | (c.B << 16) | (c.G << 8) | c.R;
             }
         }
-
-    }
-
-    // Browser-side no-op sound; implement WebAudio later
-    internal sealed class NoOpSoundDriver : ISoundDriver
-    {
-        public void Beep() { }
-        public void PlayMusicString(string musicString) { }
-        public void PlayTone(int frequencyHz, int durationMs) { }
     }
 }

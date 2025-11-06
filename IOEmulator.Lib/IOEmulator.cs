@@ -356,7 +356,15 @@ public class IOEmulator
             if (cancellationToken.IsCancellationRequested)
                 throw new OperationCanceledException(cancellationToken);
             // Wait until signaled or periodically poll external
-            _keySignal.WaitOne(10);
+            if (OperatingSystem.IsBrowser())
+            {
+                // In WASM, waiting on monitors/events is not supported; use short sleep to yield
+                try { System.Threading.Thread.Sleep(10); } catch { }
+            }
+            else
+            {
+                _keySignal.WaitOne(10);
+            }
             if (TryReadKey(out var ev)) return ev;
         }
     }
@@ -718,8 +726,14 @@ public class IOEmulator
 
     // ====== BLOAD/BSAVE (VRAM bytes) ======
     public byte[] ReadVramBytes(int offset, int count) => VRAM.ReadBytes(offset, count);
+    // Write VRAM bytes; overload for netstandard2.0 without ReadOnlySpan
+#if NETSTANDARD2_0
+    public void WriteVramBytes(int offset, byte[] data)
+        => VRAM.WriteBytes(offset, data);
+#else
     public void WriteVramBytes(int offset, ReadOnlySpan<byte> data)
         => VRAM.WriteBytes(offset, data);
+#endif
 
     public void BSave(string path, int offset, int length)
     {

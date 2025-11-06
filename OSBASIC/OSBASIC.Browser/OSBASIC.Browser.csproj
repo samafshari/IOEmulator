@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OSBASIC\OSBASIC.csproj" />
+    <ProjectReference Include="..\..\IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
+    <ProjectReference Include="..\..\IOEmulator.Lib\IOEmulator.csproj" />
   </ItemGroup>
 
 </Project>

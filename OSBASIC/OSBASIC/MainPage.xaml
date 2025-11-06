@@ -8,6 +8,54 @@
       Foreground="{DynamicResource Theme_TextBrush}">
 
     <Grid Background="{DynamicResource Theme_BackgroundBrush}">
-        <TextBlock Text="Hello, World!" FontSize="23" Margin="32,32,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top bar controls: Samples, Speed, Refresh -->
+    <StackPanel Orientation="Horizontal" Margin="8" Grid.Row="0" VerticalAlignment="Center">
+            <TextBlock Text="Sample:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <ComboBox x:Name="SamplesCombo" Width="180" SelectionChanged="OnSampleChanged"/>
+
+            <TextBlock Text="Speed:" VerticalAlignment="Center" Margin="12,0,4,0"/>
+            <ComboBox x:Name="SpeedCombo" Width="140" SelectionChanged="OnSpeedChanged">
+                <ComboBoxItem Content="10%" Tag="0.1"/>
+                <ComboBoxItem Content="25%" Tag="0.25"/>
+                <ComboBoxItem Content="50%" Tag="0.5"/>
+                <ComboBoxItem Content="75%" Tag="0.75"/>
+                <ComboBoxItem Content="100%" Tag="1.0"/>
+                <ComboBoxItem Content="150%" Tag="1.5"/>
+                <ComboBoxItem Content="200%" Tag="2.0"/>
+                <ComboBoxItem Content="300%" Tag="3.0"/>
+                <ComboBoxItem Content="500%" Tag="5.0"/>
+                <ComboBoxItem Content="1000%" Tag="10.0"/>
+            </ComboBox>
+
+            <TextBlock Text="Refresh:" VerticalAlignment="Center" Margin="12,0,4,0"/>
+            <ComboBox x:Name="RefreshCombo" Width="120" SelectionChanged="OnRefreshChanged">
+                <ComboBoxItem Content="15 FPS" Tag="66"/>
+                <ComboBoxItem Content="30 FPS" Tag="33"/>
+                <ComboBoxItem Content="40 FPS" Tag="25"/>
+                <ComboBoxItem Content="60 FPS" Tag="16"/>
+                <ComboBoxItem Content="80 FPS" Tag="12"/>
+                <ComboBoxItem Content="120 FPS" Tag="8"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Emulator surface -->
+        <Border Grid.Row="1" Background="Black">
+            <Image x:Name="VramImage"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch"/>
+        </Border>
+
+        <!-- Hidden input capture textbox for punctuation and text input -->
+        <TextBox x:Name="InputCapture"
+                 Width="1" Height="1" Opacity="0"
+                 IsTabStop="False"
+                 TextChanged="OnInputTextChanged"
+                 Grid.Row="1"/>
     </Grid>
 </Page>

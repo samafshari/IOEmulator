@@ -75,7 +75,12 @@ public class VramSurface
     }
 
     // Write bytes into VRAM (RGBRGB...) starting at 'offset'
+    // Write bytes into VRAM (RGBRGB...) starting at 'offset'
+#if NETSTANDARD2_0
+    public void WriteBytes(int offset, byte[] data)
+#else
     public void WriteBytes(int offset, ReadOnlySpan<byte> data)
+#endif
     {
         if (offset < 0 || offset + data.Length > ByteLength)
             throw new ArgumentOutOfRangeException();

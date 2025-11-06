@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- No references to Neat libraries here; the Browser host owns them -->
+  </ItemGroup>
+
+  <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
       <Generator>MSBuild:Compile</Generator>
     </ApplicationDefinition>
