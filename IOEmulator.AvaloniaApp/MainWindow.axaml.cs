@@ -319,6 +319,13 @@ public partial class MainWindow : Window
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Global termination: ESC or Ctrl+C cancels the current program in any state
+        if (e.Key == Key.Escape || (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control)))
+        {
+            try { _runCts?.Cancel(); } catch { }
+            e.Handled = true; // prevent further handling (and avoid injecting into program)
+            return;
+        }
         // Map a few special keys
         KeyCode code = e.Key switch
         {

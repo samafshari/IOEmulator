@@ -79,7 +79,7 @@ public class QBasicInterpreter
         "STEP", "NEXT", "WHILE", "WEND", "DO", "LOOP", "UNTIL",
         "GOTO", "GOSUB", "RETURN", "SUB", "FUNCTION", "DIM", "AS",
         "INTEGER", "STRING", "SELECT", "CASE", "PSET", "LINE",
-        "CIRCLE", "LOCATE", "SLEEP", "SOUND", "PLAY", "BUFFER", "DATA", "READ",
+        "CIRCLE", "LOCATE", "SLEEP", "FREEZE", "SOUND", "PLAY", "BUFFER", "DATA", "READ",
         "RESTORE", "AND", "OR", "NOT", "MOD", "SHARED"
     };
 
@@ -535,6 +535,8 @@ public class QBasicInterpreter
                 ip++; break;
             case "SLEEP":
                 DoSLEEP(tokens, ct); ip++; break;
+            case "FREEZE":
+                DoFREEZE(tokens, ct); ip++; break;
             case "DIM":
                 DoDIM(tokens); ip++; break;
             case "READ":
@@ -1369,6 +1371,45 @@ public class QBasicInterpreter
                     // Timeout: just continue
                 }
             }
+        }
+    }
+
+    private void DoFREEZE(List<string> tokens, CancellationToken ct)
+    {
+        // FREEZE <seconds>
+        // - Does not unblock on keypress
+        // - No effect for zero or negative values
+        // - Honors SpeedFactor scaling (like SLEEP)
+        // - Responds to external cancellation (program stop)
+        double seconds = 0.0;
+        if (tokens.Count <= 1)
+        {
+            // No argument provided: treat as no-op per request focus on timed variant
+            return;
+        }
+        // Try literal float first
+        if (double.TryParse(tokens[1], System.Globalization.NumberStyles.Float, CultureInfo.InvariantCulture, out var dsecs))
+        {
+            seconds = dsecs;
+        }
+        else
+        {
+            int idx = 1;
+            try { seconds = ParseIntExprAdv(tokens, ref idx); }
+            catch { seconds = 0.0; }
+        }
+        if (seconds <= 0) return;
+        int adjustedMs = (int)Math.Round(seconds * 1000.0 / SpeedFactor);
+        if (adjustedMs <= 0) return;
+        // Sleep in small slices to honor cancellation without unblocking on key
+        int remaining = adjustedMs;
+        const int step = 10;
+        while (remaining > 0)
+        {
+            if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+            int slice = remaining < step ? remaining : step;
+            try { System.Threading.Thread.Sleep(slice); } catch { }
+            remaining -= slice;
         }
     }
 
