@@ -80,7 +80,7 @@ public partial class MainWindow : Window
         foreach (var res in QBasicSamples.List().OrderBy(n => n))
         {
             var name = res.EndsWith(".bas", StringComparison.OrdinalIgnoreCase) ? res[..^4] : res;
-            var mi = new MenuItem { Header = name };
+            var mi = new MenuItem { Header = name, Focusable = false };
             mi.Click += (_, __) => StartSample(name);
             items.Add(mi);
         }
@@ -112,7 +112,7 @@ public partial class MainWindow : Window
 
         foreach (var (speed, label) in speeds)
         {
-            var mi = new MenuItem { Header = label };
+            var mi = new MenuItem { Header = label, Focusable = false };
             double capturedSpeed = speed;
             mi.Click += (_, __) => SetSpeed(capturedSpeed);
             items.Add(mi);
@@ -150,6 +150,8 @@ public partial class MainWindow : Window
                 catch (System.OperationCanceledException) { /* normal on close */ }
                 catch { /* swallow to avoid unobserved exceptions in background */ }
             });
+            // Ensure the render surface has keyboard focus after menu selection
+            try { _image?.Focus(); } catch { }
         }
         catch (Exception ex)
         {
@@ -163,6 +165,8 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        // Proactively focus the render image so arrow keys work without clicking first
+        try { _image?.Focus(); } catch { }
         SafeTick();
     }
 
@@ -328,6 +332,8 @@ public partial class MainWindow : Window
         var (x, y) = MapPointerToEmu(p, _image);
         var props = e.GetCurrentPoint(_image).Properties;
         _io.SetMouseState(x, y, props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
+        // Clicking the surface should also ensure keyboard focus for subsequent key events
+        try { _image?.Focus(); } catch { }
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)

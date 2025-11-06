@@ -4,13 +4,14 @@
         Title="IOEmulator Viewer" Width="900" Height="600"
         Background="#000000">
     <DockPanel>
-        <Menu x:Name="mainMenu" DockPanel.Dock="Top">
+        <Menu x:Name="mainMenu" DockPanel.Dock="Top" Focusable="False">
             <MenuItem Header="_Samples" x:Name="samplesMenu" />
             <MenuItem Header="_Speed" x:Name="speedMenu" />
         </Menu>
         <Border x:Name="container" Background="#000000" ClipToBounds="True">
             <!-- VRAM image overlay (code-behind will set Source) -->
-            <Image x:Name="vramImage"
+         <Image x:Name="vramImage"
+             Focusable="True"
                    Stretch="Uniform"
                    HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch"/>

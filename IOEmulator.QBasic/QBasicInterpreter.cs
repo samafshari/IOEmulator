@@ -74,7 +74,7 @@ public class QBasicInterpreter
     {
         "LEN", "ASC", "VAL", "CHR", "STR", "LEFT", "RIGHT", "MID",
         "LTRIM", "RTRIM", "TRIM", "SIN", "COS", "SQR", "ATN",
-        "RND", "PX", "PC", "SCREEN", "COLOR", "CLS", "PRINT",
+        "RND", "SCREEN", "COLOR", "CLS", "PRINT",
         "INPUT", "IF", "THEN", "ELSE", "ELSEIF", "END", "FOR", "TO",
         "STEP", "NEXT", "WHILE", "WEND", "DO", "LOOP", "UNTIL",
         "GOTO", "GOSUB", "RETURN", "SUB", "FUNCTION", "DIM", "AS",
@@ -1937,7 +1937,7 @@ public class QBasicInterpreter
                     i++; int nmax = ParseTerm(ref i); Expect(tokens, i, ")"); i++;
                     if (nmax <= 0) nmax = 1; return 1 + _rng.Next(nmax);
                 }
-                if (tok.Equals("PX", StringComparison.OrdinalIgnoreCase))
+                if (tok.Equals("PX", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
                 {
                     i++; Expect(tokens, i, "(");
                     i++; int x = ParseExpr(ref i); Expect(tokens, i, ",");
@@ -1948,7 +1948,7 @@ public class QBasicInterpreter
                     var bg = qb.Emulator.GetColor(qb.Emulator.BackgroundColorIndex);
                     return (rgb.R == bg.R && rgb.G == bg.G && rgb.B == bg.B) ? 0 : 1;
                 }
-                if (tok.Equals("PC", StringComparison.OrdinalIgnoreCase))
+                if (tok.Equals("PC", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
                 {
                     i++; Expect(tokens, i, "(");
                     i++; int x = ParseExpr(ref i); Expect(tokens, i, ",");
