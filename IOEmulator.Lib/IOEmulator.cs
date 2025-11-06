@@ -139,10 +139,12 @@ public class IOEmulator
 
     // Clipping state (VIEW)
     public int ClipX1 = 0, ClipY1 = 0, ClipX2 = int.MaxValue, ClipY2 = int.MaxValue; // inclusive
+    private bool ClipIsFullScreen = true;
 
     public void ResetView()
     {
         ClipX1 = 0; ClipY1 = 0; ClipX2 = ResolutionW - 1; ClipY2 = ResolutionH - 1;
+        ClipIsFullScreen = true;
     }
 
     public void SetView(int x1, int y1, int x2, int y2)
@@ -152,6 +154,7 @@ public class IOEmulator
         ClipY1 = Math.Max(0, y1);
         ClipX2 = Math.Min(ResolutionW - 1, x2);
         ClipY2 = Math.Min(ResolutionH - 1, y2);
+        ClipIsFullScreen = (ClipX1 == 0 && ClipY1 == 0 && ClipX2 == ResolutionW - 1 && ClipY2 == ResolutionH - 1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -159,10 +162,16 @@ public class IOEmulator
         => x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2;
 
     // Safe pixel write honoring clip and bounds
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WritePixelClipped(int x, int y, RGB color)
     {
         if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return;
-        if (IsClipped(x, y)) return;
+        if (ClipIsFullScreen)
+        {
+            PixelBuffer[y * ResolutionW + x] = color;
+            return;
+        }
+        if (x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2) return;
         PixelBuffer[y * ResolutionW + x] = color;
     }
 
@@ -454,9 +463,18 @@ public class IOEmulator
     }
 
     // ====== Primitive graphics ======
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void PSet(int x, int y, int colorIndex)
     {
-        WritePixelClipped(x, y, GetColor(colorIndex));
+        if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return;
+        var color = Palette[colorIndex];
+        if (ClipIsFullScreen)
+        {
+            PixelBuffer[y * ResolutionW + x] = color;
+            return;
+        }
+        if (x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2) return;
+        PixelBuffer[y * ResolutionW + x] = color;
     }
 
     public RGB Point(int x, int y)
@@ -473,13 +491,28 @@ public class IOEmulator
         int sy = y1 < y2 ? 1 : -1;
         int err = dx - dy;
         int x = x1, y = y1;
-        while (true)
+        if (ClipIsFullScreen)
         {
-            WritePixelClipped(x, y, color);
-            if (x == x2 && y == y2) break;
-            int e2 = err << 1;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 < dx) { err += dx; y += sy; }
+            while (true)
+            {
+                if ((uint)x < (uint)ResolutionW && (uint)y < (uint)ResolutionH)
+                    PixelBuffer[y * ResolutionW + x] = color;
+                if (x == x2 && y == y2) break;
+                int e2 = err << 1;
+                if (e2 > -dy) { err -= dy; x += sx; }
+                if (e2 < dx) { err += dx; y += sy; }
+            }
+        }
+        else
+        {
+            while (true)
+            {
+                WritePixelClipped(x, y, color);
+                if (x == x2 && y == y2) break;
+                int e2 = err << 1;
+                if (e2 > -dy) { err -= dy; x += sx; }
+                if (e2 < dx) { err += dx; y += sy; }
+            }
         }
     }
 
