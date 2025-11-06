@@ -24,6 +24,24 @@ public class QBasicApi
     // Expose the underlying emulator for advanced scenarios (e.g., interpreter control)
     public IOEmulator Emulator => io;
 
+    // Helper to query key state by human-readable name used in QB programs
+    public bool EmulatorKeyState(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        var n = name.Trim().ToUpperInvariant();
+        return n switch
+        {
+            "LEFT" => io.IsKeyDown(KeyCode.Left),
+            "RIGHT" => io.IsKeyDown(KeyCode.Right),
+            "UP" => io.IsKeyDown(KeyCode.Up),
+            "DOWN" => io.IsKeyDown(KeyCode.Down),
+            "ENTER" => io.IsKeyDown(KeyCode.Enter),
+            "TAB" => io.IsKeyDown(KeyCode.Tab),
+            "ESC" or "ESCAPE" => io.IsKeyDown(KeyCode.Escape),
+            _ => false
+        };
+    }
+
     // SCREEN mode selection
     public void SCREEN(int mode)
     {

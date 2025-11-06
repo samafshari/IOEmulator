@@ -32,3 +32,12 @@ public readonly struct KeyEvent
 }
 
 public delegate KeyEvent? ReadKeyDelegate();
+
+public struct MouseState
+{
+    public int X;
+    public int Y;
+    public bool Left;
+    public bool Right;
+    public bool Middle;
+}

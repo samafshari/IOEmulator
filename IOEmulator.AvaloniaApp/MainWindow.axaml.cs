@@ -65,6 +65,11 @@ public partial class MainWindow : Window
         // Hook text input for printable characters
     this.AddHandler(TextInputEvent, OnTextInput, Avalonia.Interactivity.RoutingStrategies.Tunnel | Avalonia.Interactivity.RoutingStrategies.Bubble);
         this.KeyDown += OnKeyDown;
+        this.KeyUp += OnKeyUp;
+        // Mouse input
+        this.PointerMoved += OnPointerMoved;
+        this.PointerPressed += OnPointerPressed;
+        this.PointerReleased += OnPointerReleased;
     }
 
     private void PopulateSamplesMenu()
@@ -247,6 +252,9 @@ public partial class MainWindow : Window
         }
     }
 
+    private static (bool shift, bool ctrl, bool alt) GetMods(KeyEventArgs e)
+        => (e.KeyModifiers.HasFlag(KeyModifiers.Shift), e.KeyModifiers.HasFlag(KeyModifiers.Control), e.KeyModifiers.HasFlag(KeyModifiers.Alt));
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         // Map a few special keys
@@ -265,8 +273,70 @@ public partial class MainWindow : Window
             Key.Down => KeyCode.Down,
             _ => KeyCode.Unknown
         };
-        _io.InjectKey(new KeyEvent(KeyEventType.Down, code));
+        var (shift, ctrl, alt) = GetMods(e);
+        _io.InjectKey(new KeyEvent(KeyEventType.Down, code, null, shift, ctrl, alt));
         // Do not echo special keys here; leave output behavior to the interpreter/app.
+    }
+
+    private void OnKeyUp(object? sender, KeyEventArgs e)
+    {
+        KeyCode code = e.Key switch
+        {
+            Key.Enter => KeyCode.Enter,
+            Key.Back => KeyCode.Backspace,
+            Key.Delete => KeyCode.Delete,
+            Key.Home => KeyCode.Home,
+            Key.End => KeyCode.End,
+            Key.Tab => KeyCode.Tab,
+            Key.Escape => KeyCode.Escape,
+            Key.Left => KeyCode.Left,
+            Key.Right => KeyCode.Right,
+            Key.Up => KeyCode.Up,
+            Key.Down => KeyCode.Down,
+            _ => KeyCode.Unknown
+        };
+        var (shift, ctrl, alt) = GetMods(e);
+        _io.InjectKey(new KeyEvent(KeyEventType.Up, code, null, shift, ctrl, alt));
+    }
+
+    private (int x, int y) MapPointerToEmu(Point pos, Control target)
+    {
+        // Map pointer pos within Image with Stretch=Uniform to emulator pixel coords
+        int w = _io.ResolutionW, h = _io.ResolutionH;
+        double iw = target.Bounds.Width, ih = target.Bounds.Height;
+        double scale = Math.Min(iw / w, ih / h);
+        double vw = w * scale, vh = h * scale;
+        double ox = (iw - vw) / 2.0, oy = (ih - vh) / 2.0;
+        double px = Math.Clamp((pos.X - ox) / scale, 0, w - 1);
+        double py = Math.Clamp((pos.Y - oy) / scale, 0, h - 1);
+        return ((int)px, (int)py);
+    }
+
+    private void OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_image == null) return;
+        var p = e.GetPosition(_image);
+        var (x, y) = MapPointerToEmu(p, _image);
+        var props = e.GetCurrentPoint(_image).Properties;
+        _io.SetMouseState(x, y, props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
+    }
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_image == null) return;
+        var p = e.GetPosition(_image);
+        var (x, y) = MapPointerToEmu(p, _image);
+        var props = e.GetCurrentPoint(_image).Properties;
+        _io.SetMouseState(x, y, props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_image == null) return;
+        var p = e.GetPosition(_image);
+        var (x, y) = MapPointerToEmu(p, _image);
+        var props = e.GetCurrentPoint(_image).Properties;
+        _io.SetMouseState(x, y, props.IsLeftButtonPressed, props.IsRightButtonPressed, props.IsMiddleButtonPressed);
     }
 
     protected override void OnClosed(EventArgs e)

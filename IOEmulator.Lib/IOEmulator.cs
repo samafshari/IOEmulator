@@ -65,6 +65,13 @@ public class IOEmulator
     // Optional external provider (host) to poll keys if queue is empty
     public ReadKeyDelegate? ExternalReadKey;
 
+    // Key and mouse state for polling-style input
+    private readonly HashSet<KeyCode> _keysDown = new();
+    public bool ShiftDown { get; private set; }
+    public bool CtrlDown { get; private set; }
+    public bool AltDown { get; private set; }
+    public MouseState Mouse;
+
     public IOEmulator()
     {
         LoadQBasicScreenMode(0);
@@ -135,6 +142,18 @@ public class IOEmulator
         if (x < 0 || x >= ResolutionW || y < 0 || y >= ResolutionH)
             throw new IOEmulatorException("Pixel coordinates out of range.");
         PixelBuffer[y * ResolutionW + x] = GetColor(colorIndex);
+    }
+
+    // Helper for tests: return exact palette index at a pixel (255 if not matched)
+    public int ReadPaletteIndexAt(int x, int y)
+    {
+        var rgb = ReadPixelAt(x, y);
+        for (int i = 0; i < Palette.Length; i++)
+        {
+            var c = Palette[i];
+            if (c.R == rgb.R && c.G == rgb.G && c.B == rgb.B) return i;
+        }
+        return 255;
     }
 
     // Clipping state (VIEW)
@@ -251,8 +270,32 @@ public class IOEmulator
     public void InjectKey(in KeyEvent ev)
     {
         _keyQueue.Enqueue(ev);
+        // Track key state for polling APIs
+        if (ev.Type == KeyEventType.Down)
+        {
+            if (ev.Code != KeyCode.Unknown) _keysDown.Add(ev.Code);
+        }
+        else if (ev.Type == KeyEventType.Up)
+        {
+            if (ev.Code != KeyCode.Unknown) _keysDown.Remove(ev.Code);
+        }
+        // Make modifiers sticky until explicitly updated; hosts typically provide current modifier state on events
+        if (ev.Shift) ShiftDown = true;
+        if (ev.Ctrl) CtrlDown = true;
+        if (ev.Alt) AltDown = true;
         _keySignal.Set();
         KeyReceived?.Invoke(ev);
+    }
+
+    public bool IsKeyDown(KeyCode code) => _keysDown.Contains(code);
+
+    public void SetMouseState(int x, int y, bool left, bool right, bool middle)
+    {
+        // Clamp to screen bounds
+        if (x < 0) x = 0; if (y < 0) y = 0;
+        if (x >= ResolutionW) x = ResolutionW - 1;
+        if (y >= ResolutionH) y = ResolutionH - 1;
+        Mouse = new MouseState { X = x, Y = y, Left = left, Right = right, Middle = middle };
     }
 
     public bool TryReadKey(out KeyEvent ev)

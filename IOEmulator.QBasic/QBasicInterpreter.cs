@@ -1963,6 +1963,61 @@ public class QBasicInterpreter
                     }
                     return 255;
                 }
+                if (tok.Equals("KEY", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++; Expect(tokens, i, "(");
+                    i++; var keyName = ParseStringExprAdv(tokens, ref i);
+                    Expect(tokens, i, ")"); i++;
+                    return qb.EmulatorKeyState(keyName) ? 1 : 0;
+                }
+                if (tok.Equals("SHIFT", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++; // at '('
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.ShiftDown ? 1 : 0;
+                }
+                if (tok.Equals("CTRL", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.CtrlDown ? 1 : 0;
+                }
+                if (tok.Equals("ALT", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.AltDown ? 1 : 0;
+                }
+                if ((tok.Equals("MX", StringComparison.OrdinalIgnoreCase) || tok.Equals("MOUSEX", StringComparison.OrdinalIgnoreCase)) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.Mouse.X;
+                }
+                if ((tok.Equals("MY", StringComparison.OrdinalIgnoreCase) || tok.Equals("MOUSEY", StringComparison.OrdinalIgnoreCase)) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.Mouse.Y;
+                }
+                if (tok.Equals("MB", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    int m = 0; var ms = qb.Emulator.Mouse; if (ms.Left) m |= 1; if (ms.Right) m |= 2; if (ms.Middle) m |= 4; return m;
+                }
+                if (tok.Equals("MOUSE_LEFT", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.Mouse.Left ? 1 : 0;
+                }
+                if (tok.Equals("MOUSE_RIGHT", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
+                {
+                    i++;
+                    if (i < tokens.Count && tokens[i] == "(") { i++; if (i < tokens.Count && tokens[i] == ")") i++; }
+                    return qb.Emulator.Mouse.Right ? 1 : 0;
+                }
                 if (tok.Equals("SIN", StringComparison.OrdinalIgnoreCase))
                 {
                     i++; Expect(tokens, i, "(");
