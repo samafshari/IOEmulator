@@ -8,17 +8,17 @@ CLS
 ' - Renders a few scanlines per frame; use Speed menu to accelerate
 
 ' Fixed-point scale
-S = 10000
+S = 1000
 
 ' Zoom state (fixed-point): center and half-spans
-CXF = -7500 ' center X = -0.75 (prettier spot)
-CYF = 1000  ' center Y = 0.1
-SPANX = 20000 ' half-width = 2.0
-SPANY = 20000 ' half-height = 2.0
+CXF = -750 ' center X = -0.75 (prettier spot)
+CYF = 100  ' center Y = 0.1
+SPANX = 2000 ' half-width = 2.0
+SPANY = 2000 ' half-height = 2.0
 
-' Zoom factor per full frame (e.g., 999/1000 => 0.1% in)
-ZN = 999
-ZD = 1000
+' Zoom factor per full frame (e.g., 99/100 => 1% in)
+ZN = 99
+ZD = 100
 
 ' Derived per-frame view and steps (initialized; recomputed each frame)
 XMIN = 0
@@ -30,7 +30,7 @@ DY = 0
 
 ' Iteration limit and bailout radius^2 (in fixed-point). Since ZR2+ZI2 is scaled by S,
 ' compare against 4*S (not 4*S*S).
-MAXIT = 64
+MAXIT = 32
 R2 = 4 * S
 
 ' State: current row index
@@ -41,7 +41,7 @@ MAIN:
   ' IF ROW = 0 THEN GOTO UPDATEVIEW  ' Removed to fix infinite loop
 
   ' Draw N scanlines per frame for smooth progressive update
-  N = 4
+  N = 8
   K = 0
 NEXTROW:
   YY = ROW + K
@@ -82,8 +82,6 @@ ADVANCE:
   IF K < N THEN GOTO NEXTROW
   ROW = ROW + N
   IF ROW >= 200 THEN GOTO ENDFRAME
-  'SLEEP 0
-  GOTO MAIN
 
 UPDATEVIEW:
   XMIN = CXF - SPANX
@@ -103,7 +101,7 @@ ENDFRAME:
   SPANX = (SPANX * ZN) / ZD
   SPANY = (SPANY * ZN) / ZD
   ' If too deep, reset to initial view to loop
-  IF SPANX < 50 THEN SPANX = 20000
-  IF SPANY < 50 THEN SPANY = 20000
+  IF SPANX < 20 THEN SPANX = 2000
+  IF SPANY < 20 THEN SPANY = 2000
   GOTO UPDATEVIEW
 END

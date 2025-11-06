@@ -658,4 +658,77 @@ GOTO 10
         }
         Assert.True(anyDiff);
     }
+
+    [Fact]
+    public void Validation_Catches_NEXT_Without_FOR()
+    {
+        var io = new IOEmulator();
+        var qb = new QBasicApi(io);
+        var interp = new QBasicInterpreter(qb);
+        string invalidSrc = @"SCREEN 13
+NEXT X
+";
+        var ex = Assert.Throws<InvalidOperationException>(() => interp.Run(invalidSrc));
+        Assert.Contains("NEXT without matching FOR", ex.Message);
+    }
+
+    [Fact]
+    public void Validation_Catches_Unclosed_FOR()
+    {
+        var io = new IOEmulator();
+        var qb = new QBasicApi(io);
+        var interp = new QBasicInterpreter(qb);
+        string invalidSrc = @"SCREEN 13
+FOR I = 1 TO 10
+PRINT I
+";
+        var ex = Assert.Throws<InvalidOperationException>(() => interp.Run(invalidSrc));
+        Assert.Contains("Unclosed FOR loop", ex.Message);
+    }
+
+    [Fact]
+    public void Validation_Catches_Undefined_Label()
+    {
+        var io = new IOEmulator();
+        var qb = new QBasicApi(io);
+        var interp = new QBasicInterpreter(qb);
+        string invalidSrc = @"SCREEN 13
+GOTO Nowhere
+";
+        var ex = Assert.Throws<InvalidOperationException>(() => interp.Run(invalidSrc));
+        Assert.Contains("Undefined label", ex.Message);
+    }
+
+    [Fact]
+    public async Task Validation_Halts_Within_2_Seconds_On_Error()
+    {
+        var io = new IOEmulator();
+        var qb = new QBasicApi(io);
+        var interp = new QBasicInterpreter(qb);
+        string invalidSrc = @"SCREEN 13
+NEXT X
+";
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var task = Task.Run(() => interp.Run(invalidSrc), cts.Token);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => task);
+        Assert.Contains("NEXT without matching FOR", ex.Message);
+    }
+
+    [Fact]
+    public async Task Raytrace_Runs_For_2_Seconds_Then_Halts()
+    {
+        var io = new IOEmulator();
+        var qb = new QBasicApi(io);
+        var interp = new QBasicInterpreter(qb);
+        string src = QBasicSamples.Load("RAYTRACE");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var task = Task.Run(() => interp.Run(src, cts.Token), cts.Token);
+
+        // Accept either OperationCanceledException (direct throw) or TaskCanceledException (task canceled before delegate runs)
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+    }
 }

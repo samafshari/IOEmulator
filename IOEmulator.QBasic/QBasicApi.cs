@@ -11,6 +11,8 @@ public class QBasicApi
     private readonly ISoundDriver sound;
     private readonly LineEditor lineEditor;
 
+    public Action<string>? PrintHook;
+
     public QBasicApi(IOEmulator emulator, ISoundDriver? soundDriver = null)
     {
         io = emulator ?? throw new ArgumentNullException(nameof(emulator));
@@ -45,6 +47,7 @@ public class QBasicApi
 
     public void PRINT(string s)
     {
+        PrintHook?.Invoke(s);
         io.PutString(s);
     }
 
