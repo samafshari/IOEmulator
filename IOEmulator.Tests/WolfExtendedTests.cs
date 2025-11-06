@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Neat.Tests;
+namespace Neat.Test;
 
 public class WolfExtendedTests
 {

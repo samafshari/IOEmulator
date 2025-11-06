@@ -2,6 +2,8 @@ using System;
 using Xunit;
 using Neat;
 
+namespace Neat.Test;
+
 public class PixelPrimitivesTests
 {
     [Fact]

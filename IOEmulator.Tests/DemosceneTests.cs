@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Neat.Tests;
+namespace Neat.Test;
 
 /// <summary>
 /// DEMOSCENE - A visually stunning QBasic graphics and audio demo

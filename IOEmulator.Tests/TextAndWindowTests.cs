@@ -1,6 +1,8 @@
 using Xunit;
 using Neat;
 
+namespace Neat.Test;
+
 public class TextAndWindowTests
 {
     [Fact]

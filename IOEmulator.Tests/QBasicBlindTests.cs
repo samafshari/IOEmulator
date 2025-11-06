@@ -4,7 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Neat.Tests
+namespace Neat.Test
 {
     public class QBasicBlindTests
     {

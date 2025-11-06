@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Neat.Tests;
+namespace Neat.Test;
 
 public class QBasicSamplesIntegrationTests
 {

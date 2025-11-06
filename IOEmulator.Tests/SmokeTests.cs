@@ -1,5 +1,7 @@
 using Xunit;
 
+namespace Neat.Test;
+
 public class SmokeTests
 {
     [Fact]

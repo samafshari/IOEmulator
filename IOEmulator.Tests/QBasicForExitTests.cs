@@ -1,7 +1,7 @@
 using System;
 using Xunit;
 
-namespace Neat.Tests;
+namespace Neat.Test;
 
 public class QBasicForExitTests
 {

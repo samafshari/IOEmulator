@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Neat.Tests;
+namespace Neat.Test;
 
 /// <summary>
 /// Tests for tokenization, arithmetic expressions, and core language features

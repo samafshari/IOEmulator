@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using Xunit;
 using Neat;
 
+namespace Neat.Test;
+
 public class InputTests
 {
     [Fact]
