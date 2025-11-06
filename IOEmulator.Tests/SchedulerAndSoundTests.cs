@@ -1,3 +1,4 @@
+﻿#nullable enable
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,8 +12,8 @@ public class SchedulerAndSoundTests
     private class TestSoundDriver : ISoundDriver
     {
         public int BeepCount;
-        public (int f,int d)? LastTone;
-        public string? LastPlay;
+    public (int f,int d) LastTone;
+    public string LastPlay = string.Empty;
         public void Beep() { BeepCount++; }
         public void PlayTone(int frequencyHz, int durationMs) { LastTone = (frequencyHz, durationMs); }
         public void PlayMusicString(string musicString) { LastPlay = musicString; }

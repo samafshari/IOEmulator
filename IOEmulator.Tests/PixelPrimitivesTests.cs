@@ -13,12 +13,11 @@ public class PixelPrimitivesTests
         io.SetPixelDimensions(64, 64);
         io.ResetView();
         io.BackgroundColorIndex = 0;
-        io.SetColor(1, new RGB(255, 0, 0));
+    int red = (255 << 24) | (0 << 16) | (0 << 8) | 255; // ABGR
+    io.SetColor(1, red);
         io.PSet(10, 10, 1);
-        var c = io.Point(10, 10);
-        Assert.Equal(255, c.R);
-        Assert.Equal(0, c.G);
-        Assert.Equal(0, c.B);
+    var c = io.Point(10, 10);
+    Assert.Equal(1, c);
     }
 
     [Fact]
@@ -27,13 +26,14 @@ public class PixelPrimitivesTests
         var io = new IOEmulator();
         io.SetPixelDimensions(32, 32);
         io.ResetView();
-        io.SetColor(2, new RGB(0, 255, 0));
+    int green = (255 << 24) | (0 << 16) | (255 << 8) | 0;
+    io.SetColor(2, green);
         io.ForegroundColorIndex = 2;
         io.Line(0, 0, 10, 10);
-        var a = io.Point(0, 0);
-        var b = io.Point(10, 10);
-        Assert.Equal(0, a.R); Assert.Equal(255, a.G);
-        Assert.Equal(0, b.R); Assert.Equal(255, b.G);
+    var a = io.Point(0, 0);
+    var b = io.Point(10, 10);
+    Assert.Equal(2, a);
+    Assert.Equal(2, b);
     }
 
     [Fact]
@@ -43,14 +43,15 @@ public class PixelPrimitivesTests
         io.SetPixelDimensions(32, 32);
         io.BackgroundColorIndex = 0;
         io.ClearPixelBuffer();
-        io.SetColor(3, new RGB(0, 0, 255));
+        int blue = (255 << 24) | (255 << 16) | (0 << 8) | 0;
+        io.SetColor(3, blue);
         io.ForegroundColorIndex = 3;
         io.SetView(8, 8, 15, 15);
         io.Line(0, 0, 31, 31);
         // Outside should remain background
         var outside = io.Point(2, 2);
         var inside = io.Point(10, 10);
-        Assert.Equal(io.GetColor(io.BackgroundColorIndex).R, outside.R);
-        Assert.Equal(255, inside.B);
+        Assert.Equal(io.BackgroundColorIndex, outside);
+        Assert.Equal(3, inside);
     }
 }

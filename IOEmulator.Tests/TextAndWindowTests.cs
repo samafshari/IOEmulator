@@ -14,16 +14,14 @@ public class TextAndWindowTests
         io.ForegroundColorIndex = 7; // typically light gray/white
         io.ClearPixelBuffer();
         // capture background of top-left cell
-        var before = io.Point(0, 0);
+    var before = io.Point(0, 0); // palette index
         io.WriteTextAt(0, 0, 'A');
         // some pixel in the cell should differ from background
         var cell = io.GetTextXY(0, 0);
         bool anyDifferent = false;
         for (int y = 0; y < 8 && !anyDifferent; y++)
             for (int x = 0; x < 8 && !anyDifferent; x++)
-                anyDifferent |= io.Point(cell.X + x, cell.Y + y).R != before.R
-                              || io.Point(cell.X + x, cell.Y + y).G != before.G
-                              || io.Point(cell.X + x, cell.Y + y).B != before.B;
+                anyDifferent |= io.Point(cell.X + x, cell.Y + y) != before;
         Assert.True(anyDifferent);
     }
 

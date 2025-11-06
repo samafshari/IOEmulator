@@ -45,8 +45,8 @@ public class QBasicSamplesIntegrationTests
             throw new Exception($"FRACTAL.bas failed: {thrownException.Message}", thrownException);
         }
         
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        int pixelCount = CountNonBackgroundPixels(io, bg);
+    int bgIdx = io.BackgroundColorIndex;
+    int pixelCount = CountNonBackgroundPixels(io, bgIdx);
         _output.WriteLine($"Rendered pixels: {pixelCount}");
         
         Assert.True(pixelCount > 100, $"Expected significant rendering, got {pixelCount} pixels");
@@ -95,8 +95,8 @@ public class QBasicSamplesIntegrationTests
             throw new Exception($"LINES.bas failed: {thrownException.Message}", thrownException);
         }
         
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        int pixelCount = CountNonBackgroundPixels(io, bg);
+    int bgIdx2 = io.BackgroundColorIndex;
+    int pixelCount = CountNonBackgroundPixels(io, bgIdx2);
         _output.WriteLine($"Rendered pixels: {pixelCount}");
         
         Assert.True(pixelCount > 100, $"Expected lines to be drawn, got {pixelCount} pixels");
@@ -145,8 +145,8 @@ public class QBasicSamplesIntegrationTests
             throw new Exception($"RAYTRACE.bas failed: {thrownException.Message}", thrownException);
         }
         
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        int pixelCount = CountNonBackgroundPixels(io, bg);
+    int bgIdx3 = io.BackgroundColorIndex;
+    int pixelCount = CountNonBackgroundPixels(io, bgIdx3);
         _output.WriteLine($"Rendered pixels: {pixelCount}");
         
         Assert.True(pixelCount > 100, $"Expected sphere rendering, got {pixelCount} pixels");
@@ -165,15 +165,15 @@ public class QBasicSamplesIntegrationTests
         _output.WriteLine("✓ RAYTRACE.bas ran successfully for 1+ seconds");
     }
 
-    private static int CountNonBackgroundPixels(IOEmulator io, RGB bg)
+    private static int CountNonBackgroundPixels(IOEmulator io, int bgIndex)
     {
         int count = 0;
         for (int y = 0; y < io.ResolutionH; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B)
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIndex)
                 {
                     count++;
                 }

@@ -63,8 +63,13 @@ public class QBasicInterpreter
         public int Step = 1;
         public int BodyStart;
         public int WendIp = -1;
+        // Instead of copying condition tokens for WHILE, hold a reference to the line tokens
+        // and an offset where the condition starts (usually 1).
         public List<string>? ConditionTokens;
+        public int ConditionStart = 0;
     }
+    // Tracks whether any text output occurred (currently unused, retained for potential future diagnostics)
+    // Suppress analyzer warning about unused field.
     private bool _didTextOutput = false;
     private bool _touchedGraphics = false;
     private CancellationToken _currentCt = default;
@@ -85,6 +90,32 @@ public class QBasicInterpreter
         "CIRCLE", "LOCATE", "SLEEP", "FREEZE", "SOUND", "PLAY", "BUFFER", "DATA", "READ",
         "RESTORE", "AND", "OR", "NOT", "MOD", "SHARED"
     };
+
+    // Hot-path support: per-interpreter LRU cache of tokenized lines
+    // Key: exact source line string; Value: token list for that line
+    private readonly Dictionary<string, (List<string> Tokens, LinkedListNode<string> LruNode)> _tokenCache
+        = new(StringComparer.Ordinal);
+    private readonly LinkedList<string> _tokenCacheLru = new();
+    private const int TokenCacheCapacity = 4096; // reasonable upper bound; typical programs are far smaller
+
+    // Fast delimiter lookup for tokenizer (ASCII set)
+    private static readonly bool[] s_delimTable = BuildDelimiterTable();
+    private static bool[] BuildDelimiterTable()
+    {
+        // Delimiters recognized by the tokenizer (kept in sync with logic below)
+        // Note: backslash (\\) is integer division; caret (^) is power
+        var set = new HashSet<char>(new[] { ',', '(', ')', '-', ':', ';', '=', '+', '*', '/', '<', '>', '%', '^', '\\' });
+        var tbl = new bool[128];
+        foreach (var ch in set) tbl[ch] = true;
+        return tbl;
+    }
+    private static bool IsDelimiter(char c) => (c < 128) && s_delimTable[c];
+
+    private void ClearTokenCache()
+    {
+        _tokenCache.Clear();
+        _tokenCacheLru.Clear();
+    }
 
     private static void ValidateVariableName(string name)
     {
@@ -214,6 +245,7 @@ public class QBasicInterpreter
         _ifChainJumpPending = false;
         _didTextOutput = false;
         _touchedGraphics = false;
+        ClearTokenCache(); // invalidate token cache for new program source
 
         QBasicValidator.Validate(source);
         var lines = SplitLines(source);
@@ -313,6 +345,8 @@ public class QBasicInterpreter
         public List<Line> Lines = new();
         public Dictionary<string, int> LabelToIndex = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, ProcInfo> Procs = new(StringComparer.OrdinalIgnoreCase);
+        // Pre-tokenized line cache: parallel array aligned with Lines; null for empty code
+        public List<string>?[] TokensPerLine = Array.Empty<List<string>?>();
     }
 
     private sealed class ProcInfo
@@ -393,11 +427,19 @@ public class QBasicInterpreter
                 label = null; // only first carries label
             }
         }
-
-        // Pass 2: index SUB/FUNCTION procs now that all lines are present
+        // Allocate token array and pre-tokenize all lines first
+        ir.TokensPerLine = new List<string>?[ir.Lines.Count];
         for (int ip = 0; ip < ir.Lines.Count; ip++)
         {
-            var t = Tokenize(ir.Lines[ip].Code);
+            var code = ir.Lines[ip].Code;
+            if (string.IsNullOrWhiteSpace(code)) { ir.TokensPerLine[ip] = null; continue; }
+            ir.TokensPerLine[ip] = Tokenize(code);
+        }
+
+        // Pass 2: index SUB/FUNCTION procs using pre-tokenized lines
+        for (int ip = 0; ip < ir.Lines.Count; ip++)
+        {
+            var t = ir.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) continue;
             if (t[0].Equals("FUNCTION", StringComparison.OrdinalIgnoreCase) || t[0].Equals("SUB", StringComparison.OrdinalIgnoreCase))
             {
@@ -429,7 +471,7 @@ public class QBasicInterpreter
         int depth = 0;
         for (int ip = startIp; ip < program.Lines.Count; ip++)
         {
-            var t = Tokenize(program.Lines[ip].Code);
+            var t = program.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) continue;
             if (t[0].Equals(isFunction ? "FUNCTION" : "SUB", StringComparison.OrdinalIgnoreCase)) { depth++; continue; }
             if (t[0].Equals("END", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals(isFunction ? "FUNCTION" : "SUB", StringComparison.OrdinalIgnoreCase))
@@ -497,7 +539,7 @@ public class QBasicInterpreter
                 ip++;
                 continue;
             }
-            var tokens = Tokenize(line.Code);
+            var tokens = program.TokensPerLine[ip] ?? new List<string>();
             if (tokens.Count == 0) { ip++; continue; }
             
             try
@@ -702,7 +744,7 @@ public class QBasicInterpreter
                     int matchedStop = -1;
                     for (int j = ip + 1; j < endSel; j++)
                     {
-                        var tline = Tokenize(program.Lines[j].Code);
+                        var tline = program.TokensPerLine[j] ?? new List<string>();
                         if (tline.Count == 0) continue;
                         if (tline[0].Equals("CASE", StringComparison.OrdinalIgnoreCase))
                         {
@@ -836,7 +878,7 @@ public class QBasicInterpreter
                     if (branchIp >= 0)
                     {
                         // Determine whether first branch is ELSEIF or ELSE
-                        var tBranch = Tokenize(program.Lines[branchIp].Code);
+                        var tBranch = program.TokensPerLine[branchIp] ?? new List<string>();
                         if (tBranch.Count > 0 && tBranch[0].Equals("ELSEIF", StringComparison.OrdinalIgnoreCase))
                         {
                             return branchIp; // evaluate ELSEIF normally
@@ -886,7 +928,7 @@ public class QBasicInterpreter
             {
                 if (branchIp >= 0)
                 {
-                    var tBranch = Tokenize(program.Lines[branchIp].Code);
+                    var tBranch = program.TokensPerLine[branchIp] ?? new List<string>();
                     if (tBranch.Count > 0 && tBranch[0].Equals("ELSEIF", StringComparison.OrdinalIgnoreCase))
                     {
                         _ifChainJumpPending = true;
@@ -968,7 +1010,7 @@ public class QBasicInterpreter
             var (branchIp, endIfIp) = FindFirstElseOrElseIfAndEndIf(program, currentIp + 1);
             if (branchIp >= 0)
             {
-                var tBranch = Tokenize(program.Lines[branchIp].Code);
+                var tBranch = program.TokensPerLine[branchIp] ?? new List<string>();
                 if (tBranch.Count > 0 && tBranch[0].Equals("ELSEIF", StringComparison.OrdinalIgnoreCase))
                 {
                     _ifChainJumpPending = true;
@@ -992,9 +1034,7 @@ public class QBasicInterpreter
         int firstBranch = -1;
         for (int ip = startIp; ip < program.Lines.Count; ip++)
         {
-            var code = program.Lines[ip].Code;
-            if (string.IsNullOrWhiteSpace(code)) continue;
-            var t = Tokenize(code);
+            var t = program.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) continue;
             if (IsBlockIfLine(t)) { depth++; continue; }
             if (IsEndIfTokens(t))
@@ -1015,9 +1055,7 @@ public class QBasicInterpreter
         int depth = 0;
         for (int ip = startIp; ip < program.Lines.Count; ip++)
         {
-            var code = program.Lines[ip].Code;
-            if (string.IsNullOrWhiteSpace(code)) continue;
-            var t = Tokenize(code);
+            var t = program.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) continue;
             if (IsBlockIfLine(t)) { depth++; continue; }
             if (IsEndIfTokens(t))
@@ -1700,7 +1738,8 @@ public class QBasicInterpreter
     private int DoWHILE(List<string> tokens, ProgramIR program, int currentIp)
     {
         // WHILE condition
-        var li = new LoopInfo { BodyStart = currentIp + 1, WendIp = FindMatchingWend(program, currentIp + 1), ConditionTokens = tokens.Skip(1).ToList() };
+        // Avoid allocating a new list: keep a reference to the line tokens and remember the start index
+        var li = new LoopInfo { BodyStart = currentIp + 1, WendIp = FindMatchingWend(program, currentIp + 1), ConditionTokens = tokens, ConditionStart = 1 };
         _loopStack.Push(li);
         return currentIp + 1;
     }
@@ -1709,7 +1748,7 @@ public class QBasicInterpreter
     {
         if (_loopStack.Count == 0) throw new InvalidOperationException("WEND without WHILE");
         var li = _loopStack.Peek();
-        if (EvaluateCondition(li.ConditionTokens!))
+        if (EvaluateCondition(li.ConditionTokens!, li.ConditionStart))
         {
             return li.BodyStart;
         }
@@ -1725,11 +1764,11 @@ public class QBasicInterpreter
         int depth = 0;
         for (int ip = startIp; ip < program.Lines.Count; ip++)
         {
-            var tokens = Tokenize(program.Lines[ip].Code);
-            if (tokens.Count == 0) continue;
-            var head = tokens[0].ToUpperInvariant();
-            if (head == "WHILE") depth++;
-            else if (head == "WEND")
+            var t = program.TokensPerLine[ip] ?? new List<string>();
+            if (t.Count == 0) continue;
+            var head = t[0];
+            if (head.Equals("WHILE", StringComparison.OrdinalIgnoreCase)) depth++;
+            else if (head.Equals("WEND", StringComparison.OrdinalIgnoreCase))
             {
                 if (depth == 0) return ip;
                 depth--;
@@ -1743,13 +1782,13 @@ public class QBasicInterpreter
         int depth = 0;
         for (int ip = startIp; ip < program.Lines.Count; ip++)
         {
-            var tokens = Tokenize(program.Lines[ip].Code);
-            if (tokens.Count == 0) continue;
-            if (tokens[0].Equals("SELECT", StringComparison.OrdinalIgnoreCase) && tokens.Count > 1 && tokens[1].Equals("CASE", StringComparison.OrdinalIgnoreCase))
+            var t = program.TokensPerLine[ip] ?? new List<string>();
+            if (t.Count == 0) continue;
+            if (t[0].Equals("SELECT", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals("CASE", StringComparison.OrdinalIgnoreCase))
             {
                 depth++; continue;
             }
-            if (tokens[0].Equals("END", StringComparison.OrdinalIgnoreCase) && tokens.Count > 1 && tokens[1].Equals("SELECT", StringComparison.OrdinalIgnoreCase))
+            if (t[0].Equals("END", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals("SELECT", StringComparison.OrdinalIgnoreCase))
             {
                 if (depth == 0) return ip;
                 depth--; continue;
@@ -1762,7 +1801,7 @@ public class QBasicInterpreter
     {
         for (int ip = startIp; ip < endSel; ip++)
         {
-            var t = Tokenize(program.Lines[ip].Code);
+            var t = program.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) continue;
             if (t[0].Equals("CASE", StringComparison.OrdinalIgnoreCase)) return ip;
             if (t[0].Equals("END", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals("SELECT", StringComparison.OrdinalIgnoreCase)) return ip;
@@ -1772,11 +1811,17 @@ public class QBasicInterpreter
 
     private bool EvaluateCondition(List<string> tokens)
     {
+        return EvaluateCondition(tokens, 0);
+    }
+
+    // Slice-aware overload to avoid allocations; evaluates logical chains from [start, tokens.Count)
+    private bool EvaluateCondition(List<string> tokens, int start)
+    {
         // Evaluate comparisons possibly chained with AND/OR (left-to-right, equal precedence)
 
-        static int FindLogicalSeparator(List<string> toks, int start)
+        static int FindLogicalSeparator(List<string> toks, int startIdx)
         {
-            for (int i = start; i < toks.Count; i++)
+            for (int i = startIdx; i < toks.Count; i++)
             {
                 var t = toks[i];
                 if (t.Equals("AND", StringComparison.OrdinalIgnoreCase) || t.Equals("OR", StringComparison.OrdinalIgnoreCase))
@@ -1798,19 +1843,15 @@ public class QBasicInterpreter
             if (opIdx < 0)
             {
                 // No explicit comparison: treat nonzero as true
-                var leftSlice = tokens.GetRange(s, e - s);
-                int idxL = 0;
-                int leftVal = ParseIntExprAdv(leftSlice, ref idxL);
+                int idxL = s;
+                int leftVal = ParseIntExprAdv(tokens, ref idxL);
                 return leftVal != 0;
             }
             // Evaluate left and right sides on their own token slices
-            int leftLen = Math.Max(0, opIdx - s);
-            int rightLen = Math.Max(0, e - (opIdx + 1));
-            var leftTokens = leftLen > 0 ? tokens.GetRange(s, leftLen) : new List<string>();
-            var rightTokens = rightLen > 0 ? tokens.GetRange(opIdx + 1, rightLen) : new List<string>();
-            int il = 0, ir = 0;
-            int left = leftTokens.Count > 0 ? ParseIntExprAdv(leftTokens, ref il) : 0;
-            int right = rightTokens.Count > 0 ? ParseIntExprAdv(rightTokens, ref ir) : 0;
+            int il = s;
+            int left = il < opIdx ? ParseIntExprAdv(tokens, ref il) : 0;
+            int ir = opIdx + 1;
+            int right = ir < e ? ParseIntExprAdv(tokens, ref ir) : 0;
             return opTok switch
             {
                 "=" => left == right,
@@ -1823,7 +1864,7 @@ public class QBasicInterpreter
             };
         }
 
-        int segStart = 0;
+        int segStart = start;
         bool hasAccum = false;
         bool accum = false;
         while (segStart < tokens.Count)
@@ -1920,9 +1961,20 @@ public class QBasicInterpreter
         _touchedGraphics = true;
     }
 
-    private static List<string> Tokenize(string code)
+    private List<string> Tokenize(string code)
     {
-        var tokens = new List<string>();
+        // Cache check (move to front in LRU on hit)
+        if (_tokenCache.TryGetValue(code, out var cached))
+        {
+            if (cached.LruNode.List != null)
+            {
+                _tokenCacheLru.Remove(cached.LruNode);
+                _tokenCacheLru.AddFirst(cached.LruNode);
+            }
+            return cached.Tokens;
+        }
+
+        var tokens = new List<string>(capacity: Math.Max(4, code.Length / 2));
         int i = 0;
         while (i < code.Length)
         {
@@ -1950,14 +2002,18 @@ public class QBasicInterpreter
                 i = j;
                 continue;
             }
-            if (",()-:;=+*/<>%^\\".IndexOf(c) >= 0)
+            if (IsDelimiter(c))
             {
                 tokens.Add(c.ToString()); i++; continue;
             }
-            // identifier or number
+            // identifier or number (run until whitespace or delimiter)
             int k = i;
-            while (k < code.Length && !char.IsWhiteSpace(code[k]) && ",()-:;=+*/<>^\\".IndexOf(code[k]) < 0)
+            while (k < code.Length)
+            {
+                char ck = code[k];
+                if (char.IsWhiteSpace(ck) || IsDelimiter(ck)) break;
                 k++;
+            }
             tokens.Add(code[i..k]);
             i = k;
         }
@@ -1986,6 +2042,22 @@ public class QBasicInterpreter
                 continue;
             }
         }
+
+        // Insert into LRU cache
+        var node = _tokenCacheLru.AddFirst(code);
+        _tokenCache[code] = (tokens, node);
+        if (_tokenCache.Count > TokenCacheCapacity)
+        {
+            // Evict least-recently-used entries until under capacity
+            var last = _tokenCacheLru.Last;
+            if (last != null)
+            {
+                string key = last.Value;
+                _tokenCacheLru.RemoveLast();
+                _tokenCache.Remove(key);
+            }
+        }
+
         return tokens;
     }
 
@@ -2093,11 +2165,10 @@ public class QBasicInterpreter
                     i++; Expect(tokens, i, "(");
                     i++; int x = ParseExpr(ref i); Expect(tokens, i, ",");
                     i++; int y = ParseExpr(ref i); Expect(tokens, i, ")"); i++;
-                    // Return 0 if background, 1 otherwise (also out-of-bounds treated as 1)
+                    // Return 0 if background, 1 otherwise (out-of-bounds treated as 1)
                     if (x < 0 || y < 0 || x >= qb.Emulator.ResolutionW || y >= qb.Emulator.ResolutionH) return 1;
-                    var rgb = qb.POINT(x, y);
-                    var bg = qb.Emulator.GetColor(qb.Emulator.BackgroundColorIndex);
-                    return (rgb.R == bg.R && rgb.G == bg.G && rgb.B == bg.B) ? 0 : 1;
+                    int idx = qb.POINT(x, y);
+                    return (idx == qb.Emulator.BackgroundColorIndex) ? 0 : 1;
                 }
                 if (tok.Equals("PC", StringComparison.OrdinalIgnoreCase) && (i + 1 < tokens.Count && tokens[i + 1] == "("))
                 {
@@ -2105,14 +2176,9 @@ public class QBasicInterpreter
                     i++; int x = ParseExpr(ref i); Expect(tokens, i, ",");
                     i++; int y = ParseExpr(ref i); Expect(tokens, i, ")"); i++;
                     if (x < 0 || y < 0 || x >= qb.Emulator.ResolutionW || y >= qb.Emulator.ResolutionH) return 255;
-                    var rgb = qb.POINT(x, y);
-                    // Find palette index match (exact)
-                    for (int pi = 0; pi < qb.Emulator.Palette.Length; pi++)
-                    {
-                        var c = qb.Emulator.GetColor(pi);
-                        if (c.R == rgb.R && c.G == rgb.G && c.B == rgb.B) return pi;
-                    }
-                    return 255;
+                    int idx = qb.POINT(x, y);
+                    // Return the palette index directly; if somehow out of range, return 255
+                    return (idx >= 0 && idx <= 255) ? idx : 255;
                 }
                 if (tok.Equals("KEY", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2766,8 +2832,7 @@ public class QBasicInterpreter
         {
             // Observe cancellation while executing procedure body
             if (_currentCt.CanBeCanceled) _currentCt.ThrowIfCancellationRequested();
-            var code = _currentProgram!.Lines[ip].Code;
-            var t = Tokenize(code);
+            var t = _currentProgram!.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) { ip++; continue; }
             if (t[0].Equals("END", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals("SUB", StringComparison.OrdinalIgnoreCase)) { ip = proc.EndIp + 1; break; }
             ip = ExecuteLine(t, _currentProgram!, ip, _currentCt);
@@ -2795,8 +2860,7 @@ public class QBasicInterpreter
         while (ip < proc.EndIp)
         {
             if (_currentCt.CanBeCanceled) _currentCt.ThrowIfCancellationRequested();
-            var code = _currentProgram!.Lines[ip].Code;
-            var t = Tokenize(code);
+            var t = _currentProgram!.TokensPerLine[ip] ?? new List<string>();
             if (t.Count == 0) { ip++; continue; }
             if (t[0].Equals("END", StringComparison.OrdinalIgnoreCase) && t.Count > 1 && t[1].Equals("FUNCTION", StringComparison.OrdinalIgnoreCase)) { ip = proc.EndIp + 1; break; }
             ip = ExecuteLine(t, _currentProgram!, ip, _currentCt);

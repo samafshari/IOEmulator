@@ -6,22 +6,21 @@ public class VramSurface
 {
     public int Width { get; private set; }
     public int Height { get; private set; }
-
-    // Backing pixel storage (RGB per pixel)
-    public RGB[] Buffer { get; private set; }
+    // Backing pixel storage: palette indices (one byte per pixel)
+    public byte[] Buffer { get; private set; }
 
     public int Stride => Width; // pixels per row
-    public int ByteLength => Width * Height * 3; // 3 bytes per pixel (RGB)
+    public int ByteLength => Width * Height; // 1 byte per pixel (index)
 
     public VramSurface(int width, int height)
     {
         if (width <= 0 || height <= 0) throw new ArgumentException("Invalid VRAM dimensions");
         Width = width;
         Height = height;
-        Buffer = new RGB[width * height];
+        Buffer = new byte[width * height];
     }
 
-    public VramSurface(RGB[] buffer, int width, int height)
+    public VramSurface(byte[] buffer, int width, int height)
     {
         if (buffer == null) throw new ArgumentNullException(nameof(buffer));
         if (width <= 0 || height <= 0) throw new ArgumentException("Invalid VRAM dimensions");
@@ -33,49 +32,29 @@ public class VramSurface
 
     public int ToIndex(int x, int y) => y * Width + x;
 
-    public void SetPixel(int x, int y, RGB color)
+    public void SetPixel(int x, int y, byte colorIndex)
     {
         if ((uint)x >= (uint)Width || (uint)y >= (uint)Height) return;
-        Buffer[ToIndex(x, y)] = color;
+        Buffer[ToIndex(x, y)] = colorIndex;
     }
 
-    public RGB GetPixel(int x, int y)
+    public byte GetPixel(int x, int y)
     {
         if ((uint)x >= (uint)Width || (uint)y >= (uint)Height) throw new ArgumentOutOfRangeException();
         return Buffer[ToIndex(x, y)];
     }
 
-    // Read a linear slice of VRAM as raw bytes (RGBRGB...) starting at 'offset' for 'count' bytes
+    // Read a linear slice of VRAM as raw bytes (indices) starting at 'offset' for 'count' bytes
     public byte[] ReadBytes(int offset, int count)
     {
         if (offset < 0 || count < 0 || offset + count > ByteLength)
             throw new ArgumentOutOfRangeException();
         var result = new byte[count];
-        int startPixel = offset / 3;
-        int startChannel = offset % 3; // 0=R,1=G,2=B
-        int remaining = count;
-        int dst = 0;
-        int pixelIndex = startPixel;
-        int channel = startChannel;
-        while (remaining > 0)
-        {
-            if ((uint)pixelIndex >= (uint)Buffer.Length) break;
-            var c = Buffer[pixelIndex];
-            byte val = channel == 0 ? c.R : channel == 1 ? c.G : c.B;
-            result[dst++] = val;
-            remaining--;
-            channel++;
-            if (channel == 3)
-            {
-                channel = 0;
-                pixelIndex++;
-            }
-        }
+        Array.Copy(Buffer, offset, result, 0, count);
         return result;
     }
 
-    // Write bytes into VRAM (RGBRGB...) starting at 'offset'
-    // Write bytes into VRAM (RGBRGB...) starting at 'offset'
+    // Write bytes (indices) starting at 'offset'
 #if NETSTANDARD2_0
     public void WriteBytes(int offset, byte[] data)
 #else
@@ -84,33 +63,10 @@ public class VramSurface
     {
         if (offset < 0 || offset + data.Length > ByteLength)
             throw new ArgumentOutOfRangeException();
-        int startPixel = offset / 3;
-        int startChannel = offset % 3;
-        int src = 0;
-        int remaining = data.Length;
-        int pixelIndex = startPixel;
-        int channel = startChannel;
-        RGB cur = Buffer[pixelIndex];
-        while (remaining > 0)
-        {
-            byte b = data[src++];
-            remaining--;
-            if (channel == 0) cur.R = b;
-            else if (channel == 1) cur.G = b;
-            else cur.B = b;
-            channel++;
-            if (channel == 3)
-            {
-                Buffer[pixelIndex] = cur;
-                pixelIndex++;
-                if ((uint)pixelIndex >= (uint)Buffer.Length) break;
-                cur = Buffer[pixelIndex];
-                channel = 0;
-            }
-        }
-        if (channel != 0 && (uint)pixelIndex < (uint)Buffer.Length)
-        {
-            Buffer[pixelIndex] = cur;
-        }
+#if NETSTANDARD2_0
+        Array.Copy(data, 0, Buffer, offset, data.Length);
+#else
+        data.CopyTo(Buffer.AsSpan(offset));
+#endif
     }
 }

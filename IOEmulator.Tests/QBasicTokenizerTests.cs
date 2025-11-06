@@ -382,11 +382,11 @@ CLS
 IF 1 = 0 THEN PSET 0, 0, 15 ELSE A = 10 : PSET A, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             var px0 = io.ReadPixelAt(0, 0);
             var px10 = io.ReadPixelAt(10, 10);
-            Assert.Equal(bg, px0); // Should NOT be set (THEN branch not taken)
-            Assert.NotEqual(bg, px10); // Should be set (ELSE branch taken)
+            Assert.Equal(bgIndex, px0); // Should NOT be set (THEN branch not taken)
+            Assert.NotEqual(bgIndex, px10); // Should be set (ELSE branch taken)
         });
     }
 
@@ -959,12 +959,12 @@ SKIP:
 PSET 60, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             // Should skip the first PSET and only execute the second
             var px1 = io.ReadPixelAt(10, 10);
             var px2 = io.ReadPixelAt(60, 10);
-            Assert.Equal(bg, px1); // First pixel should not be set
-            Assert.NotEqual(bg, px2); // Second pixel should be set
+            Assert.Equal(bgIndex, px1); // First pixel should not be set
+            Assert.NotEqual(bgIndex, px2); // Second pixel should be set
         });
     }
 
@@ -986,12 +986,12 @@ TARGET:
 PSET 70, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             // Should jump to TARGET and skip the first PSET
             var px1 = io.ReadPixelAt(10, 10);
             var px2 = io.ReadPixelAt(70, 10);
-            Assert.Equal(bg, px1); // First pixel should not be set
-            Assert.NotEqual(bg, px2); // Second pixel should be set
+            Assert.Equal(bgIndex, px1); // First pixel should not be set
+            Assert.NotEqual(bgIndex, px2); // Second pixel should be set
         });
     }
 
@@ -1084,12 +1084,12 @@ RESULT = PC((10 + 5) * 2 - 3, 10)
 IF RESULT = 15 THEN PSET 90, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            // PC should return the color at ((10 + 5) * 2 - 3, 10) = (27, 10)
+            var bgIndex = io.BackgroundColorIndex;
+            // PC should return the index at ((10 + 5) * 2 - 3, 10) = (27, 10)
             // Since we set (10,10) to 15, PC(27,10) should return 0 (background)
             // So the condition should be false and no pixel at (90,10)
             var px = io.ReadPixelAt(90, 10);
-            Assert.Equal(bg, px);
+            Assert.Equal(bgIndex, px);
         });
     }
 
@@ -1177,14 +1177,14 @@ Z = 15
 IF X < Y THEN IF Y < Z THEN PSET 120, 10, 15 ELSE PSET 130, 10, 15 ELSE PSET 140, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             // X < Y is true, Y < Z is true, so should execute PSET 120, 10, 15
             var px1 = io.ReadPixelAt(120, 10);
             var px2 = io.ReadPixelAt(130, 10);
             var px3 = io.ReadPixelAt(140, 10);
-            Assert.NotEqual(bg, px1);
-            Assert.Equal(bg, px2);
-            Assert.Equal(bg, px3);
+            Assert.NotEqual(bgIndex, px1);
+            Assert.Equal(bgIndex, px2);
+            Assert.Equal(bgIndex, px3);
         });
     }
 

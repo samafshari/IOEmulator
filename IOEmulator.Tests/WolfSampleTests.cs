@@ -55,8 +55,8 @@ public class WolfSampleTests
         }
         
         // Capture initial pixel state
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        int initialNonBgPixels = CountNonBackgroundPixels(io, bg);
+    int bgIdx = io.BackgroundColorIndex;
+    int initialNonBgPixels = CountNonBackgroundPixels(io, bgIdx);
         _output.WriteLine($"Initial non-background pixels: {initialNonBgPixels}");
         
         Assert.True(initialNonBgPixels > 0, "Expected at least one frame to be rendered initially");
@@ -71,7 +71,7 @@ public class WolfSampleTests
             throw new Exception($"WOLF.bas failed during execution: {thrownException.Message}", thrownException);
         }
         
-        int finalNonBgPixels = CountNonBackgroundPixels(io, bg);
+    int finalNonBgPixels = CountNonBackgroundPixels(io, bgIdx);
         _output.WriteLine($"Final non-background pixels: {finalNonBgPixels}");
         
         // Cancel and wait
@@ -93,15 +93,15 @@ public class WolfSampleTests
         _output.WriteLine($"✓ Rendered frames with {finalNonBgPixels} non-background pixels");
     }
 
-    private static int CountNonBackgroundPixels(IOEmulator io, RGB bg)
+    private static int CountNonBackgroundPixels(IOEmulator io, int bgIdx)
     {
         int count = 0;
         for (int y = 0; y < io.ResolutionH; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B)
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIdx)
                 {
                     count++;
                 }

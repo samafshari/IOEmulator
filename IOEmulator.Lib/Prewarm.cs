@@ -4,8 +4,8 @@ namespace Neat;
 
 internal static class Prewarm
 {
-    [ModuleInitializer]
-    internal static void Init()
+    // ModuleInitializer analyzer complains in libraries; use a static ctor instead to ensure prewarm.
+    static Prewarm()
     {
         // Preload commonly used code pages so first use is instant
         _ = CodePage.IBM8x8();

@@ -43,14 +43,13 @@ public class DemoSampleTests
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
             interp.Run(src, cts.Token);
 
-            // Verify that some pixels differ from the background color
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            // Verify that some pixels differ from the background index
+            int bgIdx = io.BackgroundColorIndex;
             int changed = 0;
-            var buf = io.PixelBuffer;
+            var buf = io.IndexBuffer;
             for (int i = 0; i < buf.Length; i += Math.Max(1, buf.Length / 5000))
             {
-                var p = buf[i];
-                if (p.R != bg.R || p.G != bg.G || p.B != bg.B) { changed++; }
+                if (buf[i] != bgIdx) { changed++; }
             }
             Assert.True(changed > 10, $"Expected some drawn pixels, found {changed} changed samples");
         });

@@ -34,7 +34,11 @@ public class ConsoleBeepSoundDriver : ISoundDriver
 
     private void TryBeep(int freq, int dur)
     {
-        try { Console.Beep(freq, dur); }
+        try {
+#if WINDOWS
+            Console.Beep(freq, dur);
+#endif
+        }
         catch { /* ignore on unsupported hosts */ }
     }
 }

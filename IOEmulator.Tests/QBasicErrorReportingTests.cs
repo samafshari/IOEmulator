@@ -21,14 +21,14 @@ PSET 0,0, 15
         interp.Run(src);
         
         // The error should have printed to the screen, so some pixels should be changed
-        var bg = io.GetColor(io.BackgroundColorIndex);
+        var bgIndex = io.BackgroundColorIndex;
         bool anyDiff = false;
         for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIndex) { anyDiff = true; break; }
             }
         }
         Assert.True(anyDiff, "Expected error message to be printed on screen");

@@ -3,10 +3,10 @@ using SkiaSharp;
 
 namespace Neat;
 
-// Renders the IOEmulator's VRAM (RGB[]) onto an SKCanvas
+// Renders the IOEmulator's current frame (PixelBuffer32 packed int[] ARGB) onto an SKCanvas
 public class VramSkiaRenderer : IDisposable
 {
-    private VramSurface? _vram;
+    private IOEmulator? _io;
     private SKBitmap? _bitmap; // RGBA8888 backing
     private byte[]? _rgba;
 
@@ -15,20 +15,14 @@ public class VramSkiaRenderer : IDisposable
 
     public void Attach(IOEmulator io)
     {
-        _vram = io?.VRAM ?? throw new ArgumentNullException(nameof(io));
-        EnsureBitmap();
-    }
-
-    public void Attach(VramSurface vram)
-    {
-        _vram = vram ?? throw new ArgumentNullException(nameof(vram));
+        _io = io ?? throw new ArgumentNullException(nameof(io));
         EnsureBitmap();
     }
 
     private void EnsureBitmap()
     {
-        if (_vram == null) return;
-        int w = _vram.Width, h = _vram.Height;
+        if (_io == null) return;
+        int w = _io.ResolutionW, h = _io.ResolutionH;
         if (w <= 0 || h <= 0) return;
         if (_bitmap == null || _bitmap.Width != w || _bitmap.Height != h)
         {
@@ -38,20 +32,29 @@ public class VramSkiaRenderer : IDisposable
         }
     }
 
-    // Convert VRAM RGB to RGBA byte array
+    // Convert packed ARGB int[] to RGBA byte array
     private void UpdateRgba()
     {
-        if (_vram == null || _rgba == null) return;
-        var src = _vram.Buffer;
+        if (_io == null || _rgba == null) return;
+        var src = _io.PixelBuffer32;
+        if (src == null) return;
         int len = src.Length;
+        if (len * 4 != _rgba.Length)
+        {
+            // Resolution changed without reattach; rebuild
+            EnsureBitmap();
+            if (_io.PixelBuffer32 == null || _rgba == null) return;
+            src = _io.PixelBuffer32;
+            len = src.Length;
+        }
         int di = 0;
         for (int i = 0; i < len; i++)
         {
-            var c = src[i];
-            _rgba[di++] = c.R; // R
-            _rgba[di++] = c.G; // G
-            _rgba[di++] = c.B; // B
-            _rgba[di++] = 255; // A
+            int c = src[i];
+            _rgba[di++] = (byte)((c >> 16) & 0xFF); // R
+            _rgba[di++] = (byte)((c >> 8) & 0xFF);  // G
+            _rgba[di++] = (byte)(c & 0xFF);         // B
+            _rgba[di++] = (byte)((c >> 24) & 0xFF); // A
         }
     }
 
@@ -59,7 +62,7 @@ public class VramSkiaRenderer : IDisposable
     public void Draw(SKCanvas canvas, SKRect dest)
     {
         if (canvas == null) throw new ArgumentNullException(nameof(canvas));
-        if (_vram == null) return;
+    if (_io == null) return;
         EnsureBitmap();
         if (_bitmap == null || _rgba == null) return;
 

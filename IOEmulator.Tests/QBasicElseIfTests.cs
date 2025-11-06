@@ -24,7 +24,7 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(10), io.ReadPixelAt(1,1));
+  Assert.Equal(10, io.ReadPixelAt(1,1));
     }
 
     [Fact]
@@ -48,7 +48,7 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(12), io.ReadPixelAt(2,2));
+  Assert.Equal(12, io.ReadPixelAt(2,2));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(14), io.ReadPixelAt(3,3));
+  Assert.Equal(14, io.ReadPixelAt(3,3));
     }
 
     [Fact]
@@ -93,7 +93,7 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(11), io.ReadPixelAt(4,4));
-        Assert.Equal(io.GetColor(12), io.ReadPixelAt(5,5));
+  Assert.Equal(11, io.ReadPixelAt(4,4));
+  Assert.Equal(12, io.ReadPixelAt(5,5));
     }
 }

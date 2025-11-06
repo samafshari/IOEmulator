@@ -23,8 +23,8 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        var c = io.ReadPixelAt(5, 5);
-        Assert.Equal(io.GetColor(15), c);
+  var c = io.ReadPixelAt(5, 5);
+  Assert.Equal(15, c);
     }
 
     [Fact]
@@ -44,8 +44,8 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        var c = io.ReadPixelAt(6, 6);
-        Assert.Equal(io.GetColor(12), c);
+  var c = io.ReadPixelAt(6, 6);
+  Assert.Equal(12, c);
     }
 
     [Fact]
@@ -64,8 +64,8 @@ ELSE PSET 7, 7, 13
 END IF
 ";
         interp.Run(src);
-        var c = io.ReadPixelAt(7, 7);
-        Assert.Equal(io.GetColor(13), c);
+  var c = io.ReadPixelAt(7, 7);
+  Assert.Equal(13, c);
     }
 
     [Fact]
@@ -88,9 +88,8 @@ PSET 21,21, 12
 ";
         interp.Run(src);
         // 20,20 should remain background (skipped by GOTO), 21,21 should be set
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        Assert.Equal(bg, io.ReadPixelAt(20,20));
-        Assert.Equal(io.GetColor(12), io.ReadPixelAt(21,21));
+  Assert.Equal(io.BackgroundColorIndex, io.ReadPixelAt(20,20));
+  Assert.Equal(12, io.ReadPixelAt(21,21));
     }
 
     [Fact]
@@ -108,7 +107,7 @@ IF A = 1 AND B = 2 THEN
 END IF
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(10), io.ReadPixelAt(8,8));
+  Assert.Equal(10, io.ReadPixelAt(8,8));
     }
 
     [Fact]
@@ -132,7 +131,7 @@ ELSE
 END IF
 ";
         interp.Run(src);
-        var c = io.ReadPixelAt(10, 10);
-        Assert.Equal(io.GetColor(15), c);
+  var c2 = io.ReadPixelAt(10, 10);
+  Assert.Equal(15, c2);
     }
 }

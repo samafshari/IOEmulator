@@ -22,8 +22,8 @@ FOR I = 0 TO 2
 NEXT
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(0,0));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(1,0));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(2,0));
+  Assert.Equal(15, io.ReadPixelAt(0,0));
+  Assert.Equal(15, io.ReadPixelAt(1,0));
+  Assert.Equal(15, io.ReadPixelAt(2,0));
     }
 }

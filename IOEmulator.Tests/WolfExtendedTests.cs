@@ -27,8 +27,8 @@ public class WolfExtendedTests
         // Let it run for about 2 seconds total
         await Task.Delay(2000);
         Assert.Null(thrown);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        int nonBg = CountNonBackgroundPixels(io, bg);
+    int bgIdx = io.BackgroundColorIndex;
+    int nonBg = CountNonBackgroundPixels(io, bgIdx);
         Assert.True(nonBg > 0, "Expected rendering after 2s run");
 
         cts.Cancel();
@@ -36,28 +36,18 @@ public class WolfExtendedTests
         if (thrown != null) throw new Exception("WOLF.bas threw during 2s run", thrown);
     }
 
-    private static int CountNonBackgroundPixels(IOEmulator io, RGB bg)
+    private static int CountNonBackgroundPixels(IOEmulator io, int bgIdx)
     {
         int count = 0;
         for (int y = 0; y < io.ResolutionH; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) count++;
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIdx) count++;
             }
         }
         return count;
     }
-
-    private static int CountPixelDiffs(RGB[] a, RGB[] b)
-    {
-        int n = Math.Min(a.Length, b.Length);
-        int diff = 0;
-        for (int i = 0; i < n; i++)
-        {
-            if (a[i].R != b[i].R || a[i].G != b[i].G || a[i].B != b[i].B) diff++;
-        }
-        return diff;
-    }
+    
 }

@@ -13,17 +13,15 @@ public class BlocksAndIOTests
         var io = new IOEmulator();
         io.SetPixelDimensions(16, 16);
         io.ResetView();
-        // Draw a small square
-        io.SetColor(4, new RGB(10, 20, 30));
+        // Draw a small square (set palette index 4 to a distinct color)
+        io.SetColor(4, unchecked((int)0xFF1E140A)); // AARRGGBB -> bytes (on LE) = BGRA: 0A 14 1E FF
         for (int y = 2; y < 6; y++)
             for (int x = 2; x < 6; x++) io.PSet(x, y, 4);
         var block = io.GetBlock(2, 2, 4, 4);
         // Put the same block overlapping with XOR -> should zero out where it overlaps
         io.PutBlock(2, 2, in block, IOEmulator.RasterOp.XOR);
-        var c = io.Point(3, 3);
-        Assert.Equal(0, c.R);
-        Assert.Equal(0, c.G);
-        Assert.Equal(0, c.B);
+    var idx = io.Point(3, 3);
+    Assert.Equal(0, idx); // XOR of same block zeroes out to background index
     }
 
     [Fact]
@@ -32,7 +30,7 @@ public class BlocksAndIOTests
         var io = new IOEmulator();
         io.SetPixelDimensions(8, 8);
         io.ResetView();
-        io.SetColor(6, new RGB(128, 64, 32));
+    io.SetColor(6, unchecked((int)0xFF804020));
         io.PSet(1, 1, 6);
         var tmp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".bin");
         try
@@ -42,10 +40,8 @@ public class BlocksAndIOTests
             io.ClearPixelBuffer();
             // Load back
             io.BLoad(tmp, 0);
-            var c = io.Point(1, 1);
-            Assert.Equal(128, c.R);
-            Assert.Equal(64, c.G);
-            Assert.Equal(32, c.B);
+            var idx = io.Point(1, 1);
+            Assert.Equal(6, idx);
         }
         finally
         {

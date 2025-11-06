@@ -16,14 +16,14 @@ public class QBasicErrorHandlingTests
         string src = "SCREEN 13\r\nX = SIN(\r\n";
         interp.Run(src);
         // Expect some pixels changed due to error message being printed
-        var bg = io.GetColor(io.BackgroundColorIndex);
+        var bgIndex = io.BackgroundColorIndex;
         bool anyDiff = false;
         for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIndex) { anyDiff = true; break; }
             }
         }
         Assert.True(anyDiff);
@@ -37,14 +37,14 @@ public class QBasicErrorHandlingTests
         var interp = new QBasicInterpreter(qb);
         string src = "SCREEN 13\r\nPSET PC(10, , 15\r\n"; // malformed: missing y before comma and missing ')'
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
+        var bgIndex = io.BackgroundColorIndex;
         bool anyDiff = false;
         for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
         {
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                if (idx != bgIndex) { anyDiff = true; break; }
             }
         }
         Assert.True(anyDiff);

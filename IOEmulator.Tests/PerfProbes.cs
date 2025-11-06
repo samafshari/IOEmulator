@@ -29,12 +29,14 @@ public class PerfProbes
         var io = new IOEmulator();
         io.SetPixelDimensions(64, 64);
         io.ResetView();
-        io.SetColor(1, new RGB(255, 0, 0));
+    // Pack as ABGR 0xAABBGGRR with A=255
+    int red = (255 << 24) | (0 << 16) | (0 << 8) | 255;
+    io.SetColor(1, red);
         io.ForegroundColorIndex = 1;
         io.PSet(10, 10, 1);
         io.Line(0, 0, 10, 10);
-        var a = io.Point(10, 10);
-        Assert.Equal(255, a.R);
+    var a = io.Point(10, 10);
+    Assert.Equal(1, a);
     }
 
     [Fact]

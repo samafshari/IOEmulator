@@ -25,7 +25,7 @@ namespace OSBASIC.Browser.Pages
         private double _speedFactor = 1.0;
         private int _refreshMs = 16;
         private static int _lastPixelCount = 0;
-        private static int[] _argb = new int[0];
+    // Using emulator's packed buffer directly; no per-frame conversion needed
 
         protected override void BuildRenderTree(RenderTreeBuilder __builder)
         {
@@ -130,12 +130,10 @@ namespace OSBASIC.Browser.Pages
                     {
                         _lastPixelCount = _io.ResolutionW * _io.ResolutionH;
                         var w = _io.ResolutionW; var h = _io.ResolutionH;
-                        if (_argb.Length != _lastPixelCount) _argb = new int[_lastPixelCount];
                         page.SetFrameSize(w, h);
                     }
                 // Always update after swap; for static scenes this is still cheap
-                ConvertToArgb(_io.PixelBuffer, _argb);
-                page.UpdateFrame(_argb);
+                page.UpdateFrame(_io.PixelBuffer32);
                 _io.ResetDirty();
                 }
                 catch (Exception ex)
@@ -163,17 +161,6 @@ namespace OSBASIC.Browser.Pages
                 case System.Windows.Input.Key.Up: return KeyCode.Up;
                 case System.Windows.Input.Key.Down: return KeyCode.Down;
                 default: return KeyCode.Unknown;
-            }
-        }
-
-        private static void ConvertToArgb(RGB[] src, int[] dst)
-        {
-            int len = Math.Min(src.Length, dst.Length);
-            for (int i = 0; i < len; i++)
-            {
-                var c = src[i];
-                // OpenSilver WriteableBitmap expects ARGB but displays with swapped R/B; use ABGR packing
-                dst[i] = (255 << 24) | (c.B << 16) | (c.G << 8) | c.R;
             }
         }
 

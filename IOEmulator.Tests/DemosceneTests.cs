@@ -182,14 +182,14 @@ RETURN
             interp.Run(demoCode);
 
             // Verify demo ran by checking some pixels were set
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             bool hasGraphics = false;
             for (int y = 0; y < 200; y += 20)
             {
                 for (int x = 0; x < 320; x += 20)
                 {
-                    var px = io.ReadPixelAt(x, y);
-                    if (px.R != bg.R || px.G != bg.G || px.B != bg.B)
+                    var idx = io.ReadPixelAt(x, y);
+                    if (idx != bgIndex)
                     {
                         hasGraphics = true;
                         break;
@@ -234,11 +234,11 @@ PSET 40, 40, 12
             interp.Run(testCode);
 
             // Check that pixels were set
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            Assert.NotEqual(bg, io.ReadPixelAt(10, 10));
-            Assert.NotEqual(bg, io.ReadPixelAt(20, 20));
-            Assert.NotEqual(bg, io.ReadPixelAt(30, 30));
-            Assert.NotEqual(bg, io.ReadPixelAt(40, 40));
+            var bgIndex = io.BackgroundColorIndex;
+            Assert.NotEqual(bgIndex, io.ReadPixelAt(10, 10));
+            Assert.NotEqual(bgIndex, io.ReadPixelAt(20, 20));
+            Assert.NotEqual(bgIndex, io.ReadPixelAt(30, 30));
+            Assert.NotEqual(bgIndex, io.ReadPixelAt(40, 40));
         });
     }
 
@@ -266,8 +266,8 @@ PSET SQR(9) + 150, ATN(0.5) / 5 + 100, 14
             interp.Run(fractalDemo);
 
             // Check that pixels were set
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            Assert.NotEqual(bg, io.ReadPixelAt(160, 100));
+            var bgIndex = io.BackgroundColorIndex;
+            Assert.NotEqual(bgIndex, io.ReadPixelAt(160, 100));
         });
     }
 
@@ -295,9 +295,9 @@ PSET SQR(4) + 5, ATN(0.3) / 2 + 10, 14
             interp.Run(tunnelDemo);
 
             // Verify pixels were set
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             var edgePixel = io.ReadPixelAt(10, 10);
-            Assert.NotEqual(bg, edgePixel);
+            Assert.NotEqual(bgIndex, edgePixel);
         });
     }
 }

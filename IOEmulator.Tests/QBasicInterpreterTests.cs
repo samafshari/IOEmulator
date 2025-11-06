@@ -1,3 +1,4 @@
+﻿#nullable enable
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,8 +11,8 @@ public class QBasicInterpreterTests
     private sealed class TestSoundDriver : ISoundDriver
     {
         public int BeepCount;
-        public (int f, int d)? LastTone;
-        public string? LastPlay;
+    public (int f, int d) LastTone;
+    public string LastPlay = string.Empty;
         public void Beep() => BeepCount++;
         public void PlayTone(int frequencyHz, int durationMs) => LastTone = (frequencyHz, durationMs);
         public void PlayMusicString(string musicString) => LastPlay = musicString;
@@ -34,16 +35,16 @@ PRINT ""Hello""
 
         interp.Run(src);
         // Assert some pixel changed from background near text area
-        var before = io.GetColor(io.BackgroundColorIndex);
+        byte bg = (byte)io.BackgroundColorIndex;
         bool anyDiff = false;
-        for (int y = 0; y < io.ResolutionH; y++)
+        var buf = io.IndexBuffer;
+        for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
         {
+            int row = y * io.ResolutionW;
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != before.R || c.G != before.G || c.B != before.B) { anyDiff = true; break; }
+                if (buf[row + x] != bg) { anyDiff = true; break; }
             }
-            if (anyDiff) break;
         }
         Assert.True(anyDiff);
     }
@@ -59,7 +60,7 @@ LINE (0,0)-(319,199), 12
 PSET (10,10), 14
 ";
         interp.Run(src);
-        Assert.NotEqual(default(RGB), io.ReadPixelAt(10, 10));
+    Assert.NotEqual(io.BackgroundColorIndex, io.ReadPaletteIndexAt(10, 10));
     }
 
     [Fact]
@@ -167,7 +168,7 @@ I = I + 2
 IF I = 2 THEN PSET 0,0,15
 ";
         interp.Run(src);
-        Assert.NotEqual(default(RGB), io.ReadPixelAt(0, 0));
+    Assert.NotEqual(io.BackgroundColorIndex, io.ReadPaletteIndexAt(0, 0));
     }
 
     [Fact]
@@ -182,7 +183,7 @@ PSET 2,2, 10
 IF PC(2,2) > 0 THEN PSET 0,0, 15
 ";
         interp.Run(src);
-        Assert.NotEqual(default(RGB), io.ReadPixelAt(0, 0));
+    Assert.NotEqual(io.BackgroundColorIndex, io.ReadPaletteIndexAt(0, 0));
     }
 
     [Fact]
@@ -197,9 +198,9 @@ SX = 13 : SY = 16 : C = 15
 PSET SX, SY, C
 ";
         interp.Run(src);
-    var bg = io.GetColor(io.BackgroundColorIndex);
-    var px = io.ReadPixelAt(13, 16);
-        Assert.True(px.R != bg.R || px.G != bg.G || px.B != bg.B);
+    var bgIdx = io.BackgroundColorIndex;
+    var pxIdx = io.ReadPaletteIndexAt(13, 16);
+        Assert.True(pxIdx != bgIdx);
     }
 
     [Fact(Timeout = 5000)]
@@ -214,17 +215,18 @@ PSET SX, SY, C
         await Task.Delay(100);
         cts.Cancel();
         await Task.WhenAny(t, Task.Delay(500));
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        bool anyDiff = false;
-        for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
+        var bgIdx2 = io.BackgroundColorIndex;
+        bool anyDiff2 = false;
+        var buf2 = io.IndexBuffer;
+        for (int y = 0; y < io.ResolutionH && !anyDiff2; y++)
         {
+            int row = y * io.ResolutionW;
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                if (buf2[row + x] != bgIdx2) { anyDiff2 = true; break; }
             }
         }
-        Assert.True(anyDiff);
+        Assert.True(anyDiff2);
     }
 
     [Fact]
@@ -241,10 +243,10 @@ IF X <> 4 THEN PSET 2,2, 15 ELSE PSET 2,2, 10
 IF X <= 5 THEN PSET 3,3, 15 ELSE PSET 3,3, 10
 ";
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        Assert.NotEqual(bg, io.ReadPixelAt(1, 1));
-        Assert.NotEqual(bg, io.ReadPixelAt(2, 2));
-        Assert.NotEqual(bg, io.ReadPixelAt(3, 3));
+    var bgIdx3 = io.BackgroundColorIndex;
+    Assert.NotEqual(bgIdx3, io.ReadPaletteIndexAt(1, 1));
+    Assert.NotEqual(bgIdx3, io.ReadPaletteIndexAt(2, 2));
+    Assert.NotEqual(bgIdx3, io.ReadPaletteIndexAt(3, 3));
     }
 
     [Fact]
@@ -259,8 +261,8 @@ A = 1 : B = 2 : C = 3
 IF A = 1 THEN IF B = 2 THEN IF C = 3 THEN PSET 0,0, 15
 ";
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        Assert.NotEqual(bg, io.ReadPixelAt(0, 0));
+    var bgIdx4 = io.BackgroundColorIndex;
+    Assert.NotEqual(bgIdx4, io.ReadPaletteIndexAt(0, 0));
     }
 
     [Fact(Timeout = 5000)]
@@ -282,12 +284,11 @@ IF PC(10, 10+S) = 0 THEN PSET 2,2, 15
 IF PC(10, 10-S) = 0 THEN PSET 3,3, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            // All four directions should have empty cells and draw test pixels
-            Assert.NotEqual(bg, io.ReadPixelAt(0, 0));
-            Assert.NotEqual(bg, io.ReadPixelAt(1, 1));
-            Assert.NotEqual(bg, io.ReadPixelAt(2, 2));
-            Assert.NotEqual(bg, io.ReadPixelAt(3, 3));
+            var bgIdx5 = io.BackgroundColorIndex;
+            Assert.NotEqual(bgIdx5, io.ReadPaletteIndexAt(0, 0));
+            Assert.NotEqual(bgIdx5, io.ReadPaletteIndexAt(1, 1));
+            Assert.NotEqual(bgIdx5, io.ReadPaletteIndexAt(2, 2));
+            Assert.NotEqual(bgIdx5, io.ReadPaletteIndexAt(3, 3));
         });
     }
 
@@ -305,9 +306,9 @@ CLS
 IF 1 = 1 THEN PSET 10, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            var px = io.ReadPixelAt(10, 10);
-            Assert.True(px.R != bg.R || px.G != bg.G || px.B != bg.B, "PSET in THEN clause didn't work");
+            var bgIdx6 = io.BackgroundColorIndex;
+            var pxIdx2 = io.ReadPaletteIndexAt(10, 10);
+            Assert.True(pxIdx2 != bgIdx6, "PSET in THEN clause didn't work");
         });
     }
 
@@ -327,9 +328,9 @@ X = 10 + S
 PSET X, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            var px = io.ReadPixelAt(14, 10);
-            Assert.True(px.R != bg.R || px.G != bg.G || px.B != bg.B, "Variable with expression assignment didn't work");
+            var bgIdx7 = io.BackgroundColorIndex;
+            var pxIdx3 = io.ReadPaletteIndexAt(14, 10);
+            Assert.True(pxIdx3 != bgIdx7, "Variable with expression assignment didn't work");
         });
     }
 
@@ -348,15 +349,12 @@ S = 4
 IF 1 = 1 THEN PSET 10+S, 10, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            // Check both direct coordinate and nearby
-            var px14 = io.ReadPixelAt(14, 10);
-            var px13 = io.ReadPixelAt(13, 10);
-            var px15 = io.ReadPixelAt(15, 10);
-            bool found = (px14.R != bg.R || px14.G != bg.G || px14.B != bg.B)
-                      || (px13.R != bg.R || px13.G != bg.G || px13.B != bg.B)
-                      || (px15.R != bg.R || px15.G != bg.G || px15.B != bg.B);
-            Assert.True(found, $"PSET with expression in THEN clause didn't set any pixel near x=14. Checked (13,10), (14,10), (15,10)");
+            var bgIdx8 = io.BackgroundColorIndex;
+            var idx14 = io.ReadPaletteIndexAt(14, 10);
+            var idx13 = io.ReadPaletteIndexAt(13, 10);
+            var idx15 = io.ReadPaletteIndexAt(15, 10);
+            bool found = (idx14 != bgIdx8) || (idx13 != bgIdx8) || (idx15 != bgIdx8);
+            Assert.True(found, "PSET with expression in THEN clause didn't set any pixel near x=14");
         });
     }
 
@@ -381,24 +379,17 @@ IF PC(10, 10) = CF THEN PSET 10, 10-S, 11
 ";
             interp.Run(src);
             // Verify that all 4 neighbors were expanded
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            var c11 = io.GetColor(11);
-            var px_right = io.ReadPixelAt(14, 10);
-            var px_left = io.ReadPixelAt(6, 10);
-            var px_down = io.ReadPixelAt(10, 14);
-            var px_up = io.ReadPixelAt(10, 6);
-            
-            // At least one direction should have been set (debugging)
-            bool anySet = (px_right.R != bg.R || px_right.G != bg.G || px_right.B != bg.B)
-                       || (px_left.R != bg.R || px_left.G != bg.G || px_left.B != bg.B)
-                       || (px_down.R != bg.R || px_down.G != bg.G || px_down.B != bg.B)
-                       || (px_up.R != bg.R || px_up.G != bg.G || px_up.B != bg.B);
+            var bgIdx9 = io.BackgroundColorIndex;
+            var idxR = io.ReadPaletteIndexAt(14, 10);
+            var idxL = io.ReadPaletteIndexAt(6, 10);
+            var idxD = io.ReadPaletteIndexAt(10, 14);
+            var idxU = io.ReadPaletteIndexAt(10, 6);
+            bool anySet = (idxR != bgIdx9) || (idxL != bgIdx9) || (idxD != bgIdx9) || (idxU != bgIdx9);
             Assert.True(anySet, "No pixels were set by PSET in THEN clause");
-            
-            Assert.Equal(c11, px_right); // right
-            Assert.Equal(c11, px_left);  // left
-            Assert.Equal(c11, px_down); // down
-            Assert.Equal(c11, px_up);  // up
+            Assert.Equal(11, idxR);
+            Assert.Equal(11, idxL);
+            Assert.Equal(11, idxD);
+            Assert.Equal(11, idxU);
         });
     }
 
@@ -418,8 +409,7 @@ T = CF : CF = NF : NF = T
 PSET 0,0, CF
 ";
             interp.Run(src);
-            var c11 = io.GetColor(11);
-            Assert.Equal(c11, io.ReadPixelAt(0, 0));
+            Assert.Equal(11, io.ReadPaletteIndexAt(0, 0));
         });
     }
 
@@ -442,8 +432,8 @@ DONE:
 PSET 0,0, 15
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            Assert.NotEqual(bg, io.ReadPixelAt(0, 0));
+            var bgIdx10 = io.BackgroundColorIndex;
+            Assert.NotEqual(bgIdx10, io.ReadPaletteIndexAt(0, 0));
         });
     }
 
@@ -490,9 +480,9 @@ T = CF : CF = NF : NF = T
 IF PC(GX, GY) <> 0 THEN END ELSE GOTO L0
 ";
             interp.Run(src);
-            var bg = io.GetColor(io.BackgroundColorIndex);
-            var goal = io.ReadPixelAt(16, 8);
-            Assert.NotEqual(bg, goal);
+            var bgIdx11 = io.BackgroundColorIndex;
+            var goalIdx = io.ReadPaletteIndexAt(16, 8);
+            Assert.NotEqual(bgIdx11, goalIdx);
         });
     }
 
@@ -596,17 +586,18 @@ PRINT """"
 ";
         // Run minimal program (no output) — end message should still be printed
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        bool anyDiff = false;
-        for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
+        var bgIdx12 = io.BackgroundColorIndex;
+        bool anyDiff3 = false;
+        var buf3 = io.IndexBuffer;
+        for (int y = 0; y < io.ResolutionH && !anyDiff3; y++)
         {
+            int row = y * io.ResolutionW;
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                if (buf3[row + x] != bgIdx12) { anyDiff3 = true; break; }
             }
         }
-        Assert.True(anyDiff);
+        Assert.True(anyDiff3);
     }
 
     [Fact]
@@ -622,17 +613,18 @@ WAT 123
         // Run should not throw and should complete
         interp.Run(src);
         // Some pixels should have changed due to error message being printed
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        bool anyDiff = false;
-        for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
+        var bgIdx13 = io.BackgroundColorIndex;
+        bool anyDiff4 = false;
+        var buf4 = io.IndexBuffer;
+        for (int y = 0; y < io.ResolutionH && !anyDiff4; y++)
         {
+            int row = y * io.ResolutionW;
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                if (buf4[row + x] != bgIdx13) { anyDiff4 = true; break; }
             }
         }
-        Assert.True(anyDiff);
+        Assert.True(anyDiff4);
     }
 
     [Fact]
@@ -646,17 +638,18 @@ CLS
 GOTO 10
 ";
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        bool anyDiff = false;
-        for (int y = 0; y < io.ResolutionH && !anyDiff; y++)
+        var bgIdx14 = io.BackgroundColorIndex;
+        bool anyDiff5 = false;
+        var buf5 = io.IndexBuffer;
+        for (int y = 0; y < io.ResolutionH && !anyDiff5; y++)
         {
+            int row = y * io.ResolutionW;
             for (int x = 0; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                if (c.R != bg.R || c.G != bg.G || c.B != bg.B) { anyDiff = true; break; }
+                if (buf5[row + x] != bgIdx14) { anyDiff5 = true; break; }
             }
         }
-        Assert.True(anyDiff);
+        Assert.True(anyDiff5);
     }
 
     [Fact]

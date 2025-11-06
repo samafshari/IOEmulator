@@ -4,13 +4,6 @@ using System.Threading;
 
 namespace Neat;
 
-public struct RGB(byte r, byte g, byte b)
-{
-    public byte R = r;
-    public byte G = g;
-    public byte B = b;
-}
-
 public struct Coords
 {
     public int X;
@@ -30,13 +23,13 @@ public partial class CodePage(Glyph[] glyphs)
     public Glyph[] Glyphs = glyphs;
 }
 
-public struct ScreenMode(int textCols, int textRows, int resW, int resH, RGB[] palette, CodePage cp)
+public struct ScreenMode(int textCols, int textRows, int resW, int resH, int[] palette, CodePage cp)
 {
     public int TextCols = textCols;
     public int TextRows = textRows;
     public int ResolutionW = resW;
     public int ResolutionH = resH;
-    public RGB[] Palette = palette;
+    public int[] Palette = palette;
     public CodePage CodePage = cp;
 }
 
@@ -45,17 +38,59 @@ public class IOEmulator
     // Pixel VRAM surface wrapper
     public VramSurface VRAM { get; private set; } = new VramSurface(1, 1);
     public CodePage CodePage = CodePage.IBM8x8();
-    public RGB[] Palette = IOPalettes.EGA;
+    public int[] Palette = IOPalettes.EGA;
     public int TextCols;
     public int TextRows;
     public int ResolutionW;
     public int ResolutionH;
-    public RGB[] PixelBuffer = [];
+    // Primary pixel storage is palette indices (0..255)
+    public byte[] IndexBuffer = Array.Empty<byte>();
+    // Parallel packed pixel buffer (ABGR 8888) for zero-copy UI blitting
+    public int[] PixelBuffer32 = Array.Empty<int>();
+    // Direct BGRA byte buffer for platforms expecting raw BGRA stride (e.g., Avalonia WriteableBitmap)
+    public byte[] PixelBufferBgra = Array.Empty<byte>();
     // Back buffer for optional double buffering
-    private RGB[]? BackBuffer;
+    private byte[]? BackIndexBuffer;
+    private int[]? BackBuffer32;
     public bool EnableDoubleBuffering { get; private set; } = false;
     // Dirty flag to indicate when PixelBuffer has changed since last render
     public bool Dirty { get; private set; }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int PackFromComponents(byte r, byte g, byte b)
+        => (255 << 24) | (b << 16) | (g << 8) | r;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteBgraAt(int idx, int color32)
+    {
+        // color32 layout: 0xAARRGGBB; BGRA bytes in little-endian are BB GG RR AA
+        int baseOfs = idx * 4;
+        PixelBufferBgra[baseOfs + 0] = (byte)(color32 & 0xFF);        // B
+        PixelBufferBgra[baseOfs + 1] = (byte)((color32 >> 8) & 0xFF); // G
+        PixelBufferBgra[baseOfs + 2] = (byte)((color32 >> 16) & 0xFF);// R
+        PixelBufferBgra[baseOfs + 3] = (byte)((color32 >> 24) & 0xFF);// A
+    }
+
+    private void FillBgra(int color32)
+    {
+        int n = ResolutionW * ResolutionH;
+        if (PixelBufferBgra.Length != n * 4)
+        {
+            PixelBufferBgra = new byte[n * 4];
+        }
+        byte b = (byte)(color32 & 0xFF);
+        byte g = (byte)((color32 >> 8) & 0xFF);
+        byte r = (byte)((color32 >> 16) & 0xFF);
+        byte a = (byte)((color32 >> 24) & 0xFF);
+        int i = 0; int end = n * 4;
+        while (i < end)
+        {
+            PixelBufferBgra[i++] = b;
+            PixelBufferBgra[i++] = g;
+            PixelBufferBgra[i++] = r;
+            PixelBufferBgra[i++] = a;
+        }
+    }
 
     // Allow hosts to acknowledge a rendered frame and clear the dirty flag
     public void ResetDirty() => Dirty = false;
@@ -93,17 +128,24 @@ public class IOEmulator
         ResolutionH = mode.ResolutionH;
         Palette = mode.Palette;
         CodePage = mode.CodePage;
-        PixelBuffer = new RGB[ResolutionW * ResolutionH];
-        VRAM = new VramSurface(PixelBuffer, ResolutionW, ResolutionH);
+        IndexBuffer = new byte[ResolutionW * ResolutionH];
+    PixelBuffer32 = new int[ResolutionW * ResolutionH];
+    PixelBufferBgra = new byte[ResolutionW * ResolutionH * 4];
+        VRAM = new VramSurface(IndexBuffer, ResolutionW, ResolutionH);
         // Allocate or reset back buffer if double buffering is enabled
         if (EnableDoubleBuffering)
         {
-            BackBuffer = new RGB[ResolutionW * ResolutionH];
+            BackIndexBuffer = new byte[ResolutionW * ResolutionH];
+            BackBuffer32 = new int[ResolutionW * ResolutionH];
         }
         // Clear both buffers to background
-        RGB bg = GetColor(BackgroundColorIndex);
-        Array.Fill(PixelBuffer, bg);
-        if (BackBuffer != null) Array.Fill(BackBuffer, bg);
+        byte bgIndex = (byte)BackgroundColorIndex;
+        Array.Fill(IndexBuffer, bgIndex);
+        if (BackIndexBuffer != null) Array.Fill(BackIndexBuffer, bgIndex);
+        int bg32 = GetColor(bgIndex);
+    Array.Fill(PixelBuffer32, bg32);
+    if (BackBuffer32 != null) Array.Fill(BackBuffer32, bg32);
+    FillBgra(bg32);
         Dirty = true;
         CursorX = 0;
         CursorY = 0;
@@ -119,62 +161,58 @@ public class IOEmulator
         LoadScreenMode(mode);
     }
 
-    public RGB GetColor(int index)
+    public int GetColor(int index)
     {
         if (index < 0 || index >= Palette.Length)
             throw new ColorOutOfRangeException(index, Palette.Length);
         return Palette[index];
     }
 
-    public void SetColor(int index, RGB color)
+    public void SetColor(int index, int packedAbgr)
     {
         if (index < 0 || index >= Palette.Length)
             throw new ColorOutOfRangeException(index, Palette.Length);
-        Palette[index] = color;
+        Palette[index] = packedAbgr;
+        // Update pixel cache where this index is used
+        var buf = GetDrawBuffer32();
+        var src = GetDrawIndexBuffer();
+        int len = Math.Min(buf.Length, src.Length);
+        for (int i = 0; i < len; i++) if (src[i] == (byte)index) buf[i] = packedAbgr;
+        Dirty = true;
     }
 
-    public RGB ReadPixelAt(int x, int y)
+    public int ReadPixelAt(int x, int y)
     {
         if (x < 0 || x >= ResolutionW || y < 0 || y >= ResolutionH)
             throw new IOEmulatorException("Pixel coordinates out of range.");
-        return PixelBuffer[y * ResolutionW + x];
+        return IndexBuffer[y * ResolutionW + x];
     }
 
-    public RGB ReadPixelClipped(int x, int y)
+    public int ReadPixelClipped(int x, int y)
     {
-        if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return new RGB(0,0,0);
-        if (IsClipped(x, y)) return new RGB(0,0,0);
-        return PixelBuffer[y * ResolutionW + x];
-    }
-
-    public void WritePixelAt(int x, int y, RGB color)
-    {
-        if (x < 0 || x >= ResolutionW || y < 0 || y >= ResolutionH)
-            throw new IOEmulatorException("Pixel coordinates out of range.");
-        var buf = GetDrawBuffer();
-        buf[y * ResolutionW + x] = color;
-        if (!EnableDoubleBuffering) Dirty = true;
+        if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return 0;
+        if (IsClipped(x, y)) return 0;
+        return IndexBuffer[y * ResolutionW + x];
     }
 
     public void WritePixelAt(int x, int y, int colorIndex)
     {
         if (x < 0 || x >= ResolutionW || y < 0 || y >= ResolutionH)
             throw new IOEmulatorException("Pixel coordinates out of range.");
-        var buf = GetDrawBuffer();
-        buf[y * ResolutionW + x] = GetColor(colorIndex);
+        int idx = y * ResolutionW + x;
+        var buf = GetDrawIndexBuffer();
+        var buf32 = GetDrawBuffer32();
+    buf[idx] = (byte)colorIndex;
+    int c32 = GetColor(colorIndex);
+    buf32[idx] = c32;
+    if (!EnableDoubleBuffering) WriteBgraAt(idx, c32);
         if (!EnableDoubleBuffering) Dirty = true;
     }
 
     // Helper for tests: return exact palette index at a pixel (255 if not matched)
     public int ReadPaletteIndexAt(int x, int y)
     {
-        var rgb = ReadPixelAt(x, y);
-        for (int i = 0; i < Palette.Length; i++)
-        {
-            var c = Palette[i];
-            if (c.R == rgb.R && c.G == rgb.G && c.B == rgb.B) return i;
-        }
-        return 255;
+        return ReadPixelAt(x, y);
     }
 
     // Clipping state (VIEW)
@@ -203,18 +241,27 @@ public class IOEmulator
 
     // Safe pixel write honoring clip and bounds
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void WritePixelClipped(int x, int y, RGB color)
+    public void WritePixelClipped(int x, int y, int colorIndex)
     {
         if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return;
-        var buf = GetDrawBuffer();
+        var buf = GetDrawIndexBuffer();
+        var buf32 = GetDrawBuffer32();
         if (ClipIsFullScreen)
         {
-            buf[y * ResolutionW + x] = color;
+            int idx = y * ResolutionW + x;
+            buf[idx] = (byte)colorIndex;
+            int c32 = GetColor(colorIndex);
+            buf32[idx] = c32;
+            if (!EnableDoubleBuffering) WriteBgraAt(idx, c32);
             if (!EnableDoubleBuffering) Dirty = true;
             return;
         }
         if (x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2) return;
-        buf[y * ResolutionW + x] = color;
+    int i = y * ResolutionW + x;
+    buf[i] = (byte)colorIndex;
+    int c32b = GetColor(colorIndex);
+    buf32[i] = c32b;
+    if (!EnableDoubleBuffering) WriteBgraAt(i, c32b);
         if (!EnableDoubleBuffering) Dirty = true;
     }
 
@@ -227,16 +274,18 @@ public class IOEmulator
     {
         if (col < 0 || col >= TextCols || row < 0 || row >= TextRows)
             throw new IOEmulatorException("Text coordinates out of range.");
-        var bg = GetColor(bgColorIndex);
-        var fg = GetColor(fgColorIndex);
-        PutGlyphAtCell(charCode, col, row, bg, fg);
+        PutGlyphAtCell(charCode, col, row, bgColorIndex, fgColorIndex);
     }
 
     public void ClearPixelBuffer()
     {
-        RGB bgColor = GetColor(BackgroundColorIndex);
-        var buf = GetDrawBuffer();
-        Array.Fill(buf, bgColor);
+        byte bgIndex = (byte)BackgroundColorIndex;
+        var bufIdx = GetDrawIndexBuffer();
+    Array.Fill(bufIdx, bgIndex);
+    var buf32 = GetDrawBuffer32();
+    int bg32 = GetColor(bgIndex);
+    Array.Fill(buf32, bg32);
+    if (!EnableDoubleBuffering) FillBgra(bg32);
         if (!EnableDoubleBuffering) Dirty = true;
     }
 
@@ -280,16 +329,21 @@ public class IOEmulator
     {
         ResolutionW = width;
         ResolutionH = height;
-        PixelBuffer = new RGB[ResolutionW * ResolutionH];
-        VRAM = new VramSurface(PixelBuffer, ResolutionW, ResolutionH);
+        IndexBuffer = new byte[ResolutionW * ResolutionH];
+        PixelBuffer32 = new int[ResolutionW * ResolutionH];
+        VRAM = new VramSurface(IndexBuffer, ResolutionW, ResolutionH);
         if (EnableDoubleBuffering)
         {
-            BackBuffer = new RGB[ResolutionW * ResolutionH];
+            BackIndexBuffer = new byte[ResolutionW * ResolutionH];
+            BackBuffer32 = new int[ResolutionW * ResolutionH];
         }
         // Clear both buffers to background
-        RGB bg = GetColor(BackgroundColorIndex);
-        Array.Fill(PixelBuffer, bg);
-        if (BackBuffer != null) Array.Fill(BackBuffer, bg);
+        byte bgIndex = (byte)BackgroundColorIndex;
+        Array.Fill(IndexBuffer, bgIndex);
+        if (BackIndexBuffer != null) Array.Fill(BackIndexBuffer, bgIndex);
+        int bg32 = GetColor(bgIndex);
+        Array.Fill(PixelBuffer32, bg32);
+        if (BackBuffer32 != null) Array.Fill(BackBuffer32, bg32);
         Dirty = true;
     }
 
@@ -450,11 +504,15 @@ public class IOEmulator
         int charHeight = ResolutionH / TextRows;
         int shiftPixels = lines * charHeight;
         int shiftBytes = shiftPixels * ResolutionW;
-        var buf = GetDrawBuffer();
+    var buf = GetDrawIndexBuffer();
         Array.Copy(buf, shiftBytes, buf, 0, buf.Length - shiftBytes);
+        var buf32 = GetDrawBuffer32();
+        Array.Copy(buf32, shiftBytes, buf32, 0, buf32.Length - shiftBytes);
         
-        RGB bgColor = GetColor(BackgroundColorIndex);
-        Array.Fill(buf, bgColor, buf.Length - shiftBytes, shiftBytes);
+        byte bgIndex = (byte)BackgroundColorIndex;
+        Array.Fill(buf, bgIndex, buf.Length - shiftBytes, shiftBytes);
+        int bg32 = GetColor(bgIndex);
+        Array.Fill(buf32, bg32, buf32.Length - shiftBytes, shiftBytes);
         if (!EnableDoubleBuffering) Dirty = true;
     }
 
@@ -474,12 +532,10 @@ public class IOEmulator
 
     public void PutGlyph(Glyph glyph)
     {
-        var bg = GetColor(BackgroundColorIndex);
-        var fg = GetColor(ForegroundColorIndex);
-        PutGlyph(glyph, TurtleX, TurtleY, bg, fg);
+        PutGlyph(glyph, TurtleX, TurtleY, BackgroundColorIndex, ForegroundColorIndex);
     }
 
-    public void PutGlyph(Glyph glyph, int x0, int y0, RGB bg, RGB fg)
+    public void PutGlyph(Glyph glyph, int x0, int y0, int bgIndex, int fgIndex)
     {
         if (glyph == null) return;
         glyph.Action?.Invoke();
@@ -503,20 +559,20 @@ public class IOEmulator
                 if (pixelX < 0 || pixelX >= ResolutionW) continue;
                 if (pixelValue == 0)
                 {
-                    WritePixelClipped(pixelX, pixelY, bg);
+                    WritePixelClipped(pixelX, pixelY, bgIndex);
                 }
                 else
                 {
-                    WritePixelClipped(pixelX, pixelY, fg);
+                    WritePixelClipped(pixelX, pixelY, fgIndex);
                 }
             }
         }
     }
 
-    public void PutGlyph(int character, int x0, int y0, RGB bg, RGB fg)
+    public void PutGlyph(int character, int x0, int y0, int bgIndex, int fgIndex)
     {
         var glyph = GetGlyphForCharacter(character);
-        PutGlyph(glyph, x0, y0, bg, fg);
+        PutGlyph(glyph, x0, y0, bgIndex, fgIndex);
     }
 
     public Coords GetTextXY(int col, int row)
@@ -530,22 +586,20 @@ public class IOEmulator
         };
     }
 
-    public void PutGlyphAtCell(int character, int col, int row, RGB bg, RGB fg)
+    public void PutGlyphAtCell(int character, int col, int row, int bgIndex, int fgIndex)
     {
         var coords = GetTextXY(col, row);
-        PutGlyph(character, coords.X, coords.Y, bg, fg);
+        PutGlyph(character, coords.X, coords.Y, bgIndex, fgIndex);
     }
 
-    public void PutGlyphAtCursor(int character, RGB bg, RGB fg)
+    public void PutGlyphAtCursor(int character, int bgIndex, int fgIndex)
     {
-        PutGlyphAtCell(character, CursorX, CursorY, bg, fg);
+        PutGlyphAtCell(character, CursorX, CursorY, bgIndex, fgIndex);
     }
 
     public void PutGlyphAtCursor(int character)
     {
-        var bg = GetColor(BackgroundColorIndex);
-        var fg = GetColor(ForegroundColorIndex);
-        PutGlyphAtCell(character, CursorX, CursorY, bg, fg);
+        PutGlyphAtCell(character, CursorX, CursorY, BackgroundColorIndex, ForegroundColorIndex);
     }
 
     // ====== Primitive graphics ======
@@ -553,41 +607,55 @@ public class IOEmulator
     public void PSet(int x, int y, int colorIndex)
     {
         if ((uint)x >= (uint)ResolutionW || (uint)y >= (uint)ResolutionH) return;
-        var color = Palette[colorIndex];
-        var buf = GetDrawBuffer();
+        var color32 = GetColor(colorIndex);
+        var buf = GetDrawIndexBuffer();
+        var buf32 = GetDrawBuffer32();
         if (ClipIsFullScreen)
         {
-            buf[y * ResolutionW + x] = color;
+            int idx = y * ResolutionW + x;
+            buf[idx] = (byte)colorIndex;
+            buf32[idx] = color32;
+            if (!EnableDoubleBuffering) WriteBgraAt(idx, color32);
             if (!EnableDoubleBuffering) Dirty = true;
             return;
         }
         if (x < ClipX1 || x > ClipX2 || y < ClipY1 || y > ClipY2) return;
-        buf[y * ResolutionW + x] = color;
+        int i = y * ResolutionW + x;
+        buf[i] = (byte)colorIndex;
+        buf32[i] = color32;
+        if (!EnableDoubleBuffering) WriteBgraAt(i, color32);
         if (!EnableDoubleBuffering) Dirty = true;
     }
 
-    public RGB Point(int x, int y)
+    public int Point(int x, int y)
     {
         return ReadPixelClipped(x, y);
     }
 
     public void Line(int x1, int y1, int x2, int y2, int? colorIndex = null)
     {
-        var color = colorIndex.HasValue ? GetColor(colorIndex.Value) : GetColor(ForegroundColorIndex);
+        int idxColor = colorIndex.HasValue ? colorIndex.Value : ForegroundColorIndex;
+        var color32 = GetColor(idxColor);
         // Bresenham
         int dx = Math.Abs(x2 - x1), dy = Math.Abs(y2 - y1);
         int sx = x1 < x2 ? 1 : -1;
         int sy = y1 < y2 ? 1 : -1;
         int err = dx - dy;
         int x = x1, y = y1;
-        var buf = GetDrawBuffer();
+        var buf = GetDrawIndexBuffer();
+        var buf32 = GetDrawBuffer32();
         if (ClipIsFullScreen)
         {
             if (!EnableDoubleBuffering) Dirty = true;
             while (true)
             {
                 if ((uint)x < (uint)ResolutionW && (uint)y < (uint)ResolutionH)
-                    buf[y * ResolutionW + x] = color;
+                {
+                    int idx = y * ResolutionW + x;
+                    buf[idx] = (byte)idxColor;
+                    buf32[idx] = color32;
+                    if (!EnableDoubleBuffering) WriteBgraAt(idx, color32);
+                }
                 if (x == x2 && y == y2) break;
                 int e2 = err << 1;
                 if (e2 > -dy) { err -= dy; x += sx; }
@@ -599,7 +667,7 @@ public class IOEmulator
             if (!EnableDoubleBuffering) Dirty = true;
             while (true)
             {
-                WritePixelClipped(x, y, color);
+                WritePixelClipped(x, y, idxColor);
                 if (x == x2 && y == y2) break;
                 int e2 = err << 1;
                 if (e2 > -dy) { err -= dy; x += sx; }
@@ -629,15 +697,15 @@ public class IOEmulator
     {
         public int Width;
         public int Height;
-        public RGB[] Data;
+        public byte[] Data; // palette indices
     }
 
     public ImageBlock GetBlock(int x, int y, int width, int height)
     {
         if (width <= 0 || height <= 0) throw new IOEmulatorException("Invalid block dimensions.");
-        var data = new RGB[width * height];
+        var data = new byte[width * height];
         int i = 0;
-        var srcBuf = GetDrawBuffer();
+        var srcBuf = GetDrawIndexBuffer();
         for (int yy = 0; yy < height; yy++)
         {
             int py = y + yy;
@@ -650,25 +718,22 @@ public class IOEmulator
                 }
                 else
                 {
-                    data[i++] = new RGB(0, 0, 0);
+                    data[i++] = 0;
                 }
             }
         }
         return new ImageBlock { Width = width, Height = height, Data = data };
     }
 
-    private static RGB ApplyOp(RGB dst, RGB src, RasterOp op)
-    {
-        byte f(byte a, byte b) => op switch
+    private static byte ApplyOp(byte dstIdx, byte srcIdx, RasterOp op)
+        => op switch
         {
-            RasterOp.PSET => b,
-            RasterOp.AND => (byte)(a & b),
-            RasterOp.OR  => (byte)(a | b),
-            RasterOp.XOR => (byte)(a ^ b),
-            _ => b
+            RasterOp.PSET => srcIdx,
+            RasterOp.AND => (byte)(dstIdx & srcIdx),
+            RasterOp.OR  => (byte)(dstIdx | srcIdx),
+            RasterOp.XOR => (byte)(dstIdx ^ srcIdx),
+            _ => srcIdx
         };
-        return new RGB(f(dst.R, src.R), f(dst.G, src.G), f(dst.B, src.B));
-    }
 
     public void PutBlock(int x, int y, in ImageBlock block, RasterOp op)
     {
@@ -676,7 +741,8 @@ public class IOEmulator
             throw new IOEmulatorException("Invalid block data.");
         int i = 0;
         bool wrote = false;
-        var buf = GetDrawBuffer();
+        var buf = GetDrawIndexBuffer();
+        var buf32 = GetDrawBuffer32();
         for (int yy = 0; yy < block.Height; yy++)
         {
             int py = y + yy;
@@ -688,7 +754,12 @@ public class IOEmulator
                 if ((uint)px >= (uint)ResolutionW) continue;
                 if (IsClipped(px, py)) continue;
                 var dst = buf[py * ResolutionW + px];
-                buf[py * ResolutionW + px] = ApplyOp(dst, src, op);
+                var res = ApplyOp(dst, src, op);
+                int idx = py * ResolutionW + px;
+                buf[idx] = res;
+                int c32 = GetColor(res);
+                buf32[idx] = c32;
+                if (!EnableDoubleBuffering) WriteBgraAt(idx, c32);
                 wrote = true;
             }
         }
@@ -696,7 +767,8 @@ public class IOEmulator
     }
 
     // ====== Double buffering control ======
-    private RGB[] GetDrawBuffer() => (EnableDoubleBuffering && BackBuffer != null) ? BackBuffer : PixelBuffer;
+    private byte[] GetDrawIndexBuffer() => (EnableDoubleBuffering && BackIndexBuffer != null) ? BackIndexBuffer : IndexBuffer;
+    private int[] GetDrawBuffer32() => (EnableDoubleBuffering && BackBuffer32 != null) ? BackBuffer32 : PixelBuffer32;
 
     // Enable or disable drawing to a back buffer. When enabling, allocate back buffer and initialize with current front.
     public void SetBufferingMode(bool enable)
@@ -705,22 +777,31 @@ public class IOEmulator
         EnableDoubleBuffering = enable;
         if (enable)
         {
-            BackBuffer = new RGB[ResolutionW * ResolutionH];
+            BackIndexBuffer = new byte[ResolutionW * ResolutionH];
             // Start with a copy of the current front buffer to avoid sudden blank frame
-            Array.Copy(PixelBuffer, BackBuffer, PixelBuffer.Length);
+            Array.Copy(IndexBuffer, BackIndexBuffer, IndexBuffer.Length);
+            BackBuffer32 = new int[ResolutionW * ResolutionH];
+            Array.Copy(PixelBuffer32, BackBuffer32, PixelBuffer32.Length);
         }
         else
         {
-            BackBuffer = null;
+            BackIndexBuffer = null;
+            BackBuffer32 = null;
         }
     }
 
     // Copy back buffer to front buffer and mark as dirty
     public void BufferSwap()
     {
-        if (!EnableDoubleBuffering || BackBuffer == null) return;
+        if (!EnableDoubleBuffering || BackIndexBuffer == null) return;
         // Copy back to front
-        Array.Copy(BackBuffer, PixelBuffer, PixelBuffer.Length);
+        Array.Copy(BackIndexBuffer, IndexBuffer, IndexBuffer.Length);
+        if (BackBuffer32 != null && PixelBuffer32.Length == BackBuffer32.Length)
+        {
+            Array.Copy(BackBuffer32, PixelBuffer32, PixelBuffer32.Length);
+            // Rebuild BGRA from PixelBuffer32
+            for (int i = 0; i < PixelBuffer32.Length; i++) WriteBgraAt(i, PixelBuffer32[i]);
+        }
         Dirty = true;
     }
 

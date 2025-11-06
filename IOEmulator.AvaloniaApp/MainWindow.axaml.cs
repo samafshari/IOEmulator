@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Media;
 using Neat;
+using System.Runtime.InteropServices;
 namespace Neat.UI;
 
 public partial class MainWindow : Window
@@ -237,7 +238,7 @@ public partial class MainWindow : Window
                 try
                 {
                     var g = _io.GetGlyphForCharacter('A');
-                    System.Diagnostics.Debug.WriteLine($"IOEmu: res={w}x{h} text={_io.TextCols}x{_io.TextRows} glyphA={g.Width}x{g.Height} pixels={_io.PixelBuffer.Length}");
+                    System.Diagnostics.Debug.WriteLine($"IOEmu: res={w}x{h} text={_io.TextCols}x{_io.TextRows} glyphA={g.Width}x{g.Height} pixels32={_io.PixelBuffer32.Length}");
                 }
                 catch { /* ignore diagnostics failures */ }
                 _loggedOnce = true;
@@ -258,39 +259,24 @@ public partial class MainWindow : Window
             // Skip redraw if nothing changed and size is stable
             if (!sizeChanged && !_io.Dirty) return;
             using var fb = _wbmp.Lock();
-            // Copy VRAM RGB to BGRA into surface, honoring framebuffer stride and avoiding races
-            var srcBuf = _io.PixelBuffer; // snapshot reference
-            int expectedPixels = w * h;
-            var bgra = System.Buffers.ArrayPool<byte>.Shared.Rent(expectedPixels * 4);
-            try
+            // Fast-path copy: PixelBuffer32 is 0xAARRGGBB, which on little-endian maps to BGRA byte order expected by Bgra8888
+            var src = _io.PixelBuffer32; // snapshot packed int[]
+            if (src == null || src.Length < w * h) return;
+            int dstStrideBytes = fb.RowBytes;
+            int srcStrideBytes = w * 4;
+            var addr = fb.Address;
+            if (dstStrideBytes == srcStrideBytes)
             {
-                int di = 0;
-                int pixelCount = Math.Min(srcBuf.Length, expectedPixels);
-                for (int i = 0; i < pixelCount; i++)
-                {
-                    var c = srcBuf[i];
-                    // BGRA ordering for PixelFormat.Bgra8888
-                    bgra[di++] = c.B; bgra[di++] = c.G; bgra[di++] = c.R; bgra[di++] = 255;
-                }
-                if (pixelCount < expectedPixels)
-                {
-                    var bg = _io.GetColor(_io.BackgroundColorIndex);
-                    for (int i = pixelCount; i < expectedPixels; i++)
-                    {
-                        bgra[di++] = bg.B; bgra[di++] = bg.G; bgra[di++] = bg.R; bgra[di++] = 255;
-                    }
-                }
-                int srcStride = w * 4; // 4 bytes per pixel (BGRA)
-                int dstStride = fb.RowBytes;
-                var addr = fb.Address;
+                // Single contiguous copy
+                Marshal.Copy(src, 0, addr, w * h);
+            }
+            else
+            {
+                // Strided copy, one row at a time
                 for (int y = 0; y < h; y++)
                 {
-                    System.Runtime.InteropServices.Marshal.Copy(bgra, y * srcStride, addr + y * dstStride, srcStride);
+                    Marshal.Copy(src, y * w, addr + y * dstStrideBytes, w);
                 }
-            }
-            finally
-            {
-                System.Buffers.ArrayPool<byte>.Shared.Return(bgra);
             }
             _image?.InvalidateVisual();
             _io.ResetDirty();

@@ -140,7 +140,13 @@ public class QBasicApi
 
     // Graphics primitives
     public void PSET(int x, int y, int color) => io.PSet(x, y, color);
-    public RGB POINT(int x, int y) => io.Point(x, y);
+    // POINT now returns the palette index (byte promoted to int) at the given pixel, or background index for OOB
+    public int POINT(int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= io.ResolutionW || y >= io.ResolutionH)
+            return io.BackgroundColorIndex;
+        return io.Point(x, y);
+    }
     public void LINE(int x1, int y1, int x2, int y2, int? color = null) => io.Line(x1, y1, x2, y2, color);
 
     // GET/PUT

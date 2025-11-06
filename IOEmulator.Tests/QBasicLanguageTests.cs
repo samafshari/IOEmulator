@@ -65,13 +65,13 @@ public class QBasicLanguageTests
         int charHeight = io.ResolutionH / io.TextRows;
         var rowTop = io.GetTextXY(0, row).Y;
         int textEndX = io.GetTextXY(startCol + 4, row).X; // 2 prompt + 2 typed
-        var bg = io.GetColor(io.BackgroundColorIndex);
+        var bgIndex = io.BackgroundColorIndex;
         for (int y = rowTop; y < rowTop + charHeight; y++)
         {
             for (int x = textEndX; x < io.ResolutionW; x++)
             {
-                var c = io.PixelBuffer[y * io.ResolutionW + x];
-                Assert.True(c.R == bg.R && c.G == bg.G && c.B == bg.B, "Found non-background pixel after text end (caret artifact)");
+                var idx = io.IndexBuffer[y * io.ResolutionW + x];
+                Assert.True(idx == bgIndex, "Found non-background pixel after text end (caret artifact)");
             }
         }
     }

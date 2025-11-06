@@ -1,8 +1,9 @@
 <Solution>
-  <Project Path="IOEmulator.Lib\IOEmulator.csproj" />
   <Project Path="IOEmulator.AvaloniaApp\IOEmulator.AvaloniaApp.csproj" />
-  <Project Path="IOEmulator.Tests\IOEmulator.Tests.csproj" />
+  <Project Path="IOEmulator.Lib\IOEmulator.csproj" />
   <Project Path="IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
+  <Project Path="IOEmulator.Skia/IOEmulator.Skia.csproj" />
+  <Project Path="IOEmulator.Tests\IOEmulator.Tests.csproj" />
   <Project Path="OSBASIC/OSBASIC.Browser/OSBASIC.Browser.csproj" Id="a58c88a3-e1be-4d36-8026-d807a9fc2c25" />
   <Project Path="OSBASIC/OSBASIC.Simulator/OSBASIC.Simulator.csproj" Id="f70ccffc-8313-42a0-aa52-98ff0f7814c7" />
   <Project Path="OSBASIC/OSBASIC/OSBASIC.csproj" Id="60da6773-de3c-4913-bb1d-e98ae3e27dc5" />

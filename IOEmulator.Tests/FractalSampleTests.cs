@@ -23,13 +23,13 @@ public class FractalSampleTests
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
             interp.Run(src, cts.Token);
 
-            var bg = io.GetColor(io.BackgroundColorIndex);
+            var bgIndex = io.BackgroundColorIndex;
             int changed = 0;
-            var buf = io.PixelBuffer;
+            var buf = io.IndexBuffer;
             for (int i = 0; i < buf.Length; i += Math.Max(1, buf.Length / 5000))
             {
-                var p = buf[i];
-                if (p.R != bg.R || p.G != bg.G || p.B != bg.B) { changed++; }
+                var idx = buf[i];
+                if (idx != bgIndex) { changed++; }
             }
             Assert.True(changed > 10, $"Expected fractal to draw pixels, found {changed}");
         });

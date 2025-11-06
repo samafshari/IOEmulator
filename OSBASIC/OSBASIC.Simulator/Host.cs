@@ -15,7 +15,7 @@ namespace OSBASIC.Simulator
         private static System.Timers.Timer _timer;
         private static double _speedFactor = 1.0;
         private static int _lastPixelCount = 0;
-        private static int[] _argb = Array.Empty<int>();
+    // Use emulator's packed buffer directly; no conversion
         private static bool _initialized = false;
 
         public static void InitializeWhenReady()
@@ -77,12 +77,11 @@ namespace OSBASIC.Simulator
                     {
                         _lastPixelCount = _io.ResolutionW * _io.ResolutionH;
                         var w = _io.ResolutionW; var h = _io.ResolutionH;
-                        if (_argb.Length != _lastPixelCount) _argb = new int[_lastPixelCount];
                         page.Dispatcher.BeginInvoke(() => page.SetFrameSize(w, h));
                     }
                     if (!_io.Dirty) return;
-                    ConvertToArgb(_io.PixelBuffer, _argb);
-                    page.Dispatcher.BeginInvoke(() => page.UpdateFrame(_argb));
+                    var frame = _io.PixelBuffer32;
+                    page.Dispatcher.BeginInvoke(() => page.UpdateFrame(frame));
                     _io.ResetDirty();
                 }
                 catch { }
@@ -126,15 +125,5 @@ namespace OSBASIC.Simulator
             }
         }
 
-        private static void ConvertToArgb(RGB[] src, int[] dst)
-        {
-            int len = Math.Min(src.Length, dst.Length);
-            for (int i = 0; i < len; i++)
-            {
-                var c = src[i];
-                // OpenSilver WriteableBitmap expects ARGB but displays with swapped R/B; use ABGR packing
-                dst[i] = (255 << 24) | (c.B << 16) | (c.G << 8) | c.R;
-            }
-        }
     }
 }

@@ -16,8 +16,8 @@ public class RaytraceLanguageTests
         var interp = new QBasicInterpreter(qb);
         var src = QBasicSamples.Load("RAYTRACE_LOOPS");
         interp.Run(src);
-        var on = io.GetColor(15);
-        var bg = io.GetColor(io.BackgroundColorIndex);
+    var on = 15;
+    var bg = io.BackgroundColorIndex;
         // Top-left 10x10 should be lit
         for (int y = 0; y < 10; y++)
         {
@@ -39,8 +39,8 @@ public class RaytraceLanguageTests
         var interp = new QBasicInterpreter(qb);
         var src = QBasicSamples.Load("RAYTRACE_INLINE_GOTO");
         interp.Run(src);
-        var on = io.GetColor(15);
-        var bg = io.GetColor(io.BackgroundColorIndex);
+    var on = 15;
+    var bg = io.BackgroundColorIndex;
         // Pixel at 2,2 should be set; 0,0 should remain background due to GOTO skipping it
         Assert.Equal(on, io.ReadPixelAt(2, 2));
         Assert.Equal(bg, io.ReadPixelAt(0, 0));
@@ -54,7 +54,7 @@ public class RaytraceLanguageTests
         var interp = new QBasicInterpreter(qb);
         var src = QBasicSamples.Load("RAYTRACE_MATH_SQR");
         interp.Run(src);
-        var on = io.GetColor(15);
+    var on = 15;
         Assert.Equal(on, io.ReadPixelAt(5, 0));
     }
 
@@ -75,7 +75,7 @@ PSET DOT, 1, 15
 END
 ";
         interp.Run(src);
-        var on = io.GetColor(15);
+    var on = 15;
         Assert.Equal(on, io.ReadPixelAt(10, 1));
     }
 
@@ -98,7 +98,7 @@ PSET I, 3, 15
 END
 ";
         interp.Run(src);
-        var on = io.GetColor(15);
+    var on = 15;
         Assert.Equal(on, io.ReadPixelAt(2, 3)); // I incremented for STP=1,2 then jumped out
     }
 
@@ -120,7 +120,7 @@ PSET DOT, 4, 15
 END
 ";
         interp.Run(src);
-        var on = io.GetColor(15);
+    var on = 15;
         Assert.Equal(on, io.ReadPixelAt(0, 4));
     }
 }

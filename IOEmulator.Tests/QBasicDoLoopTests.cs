@@ -21,9 +21,9 @@ DO WHILE I < 3
 LOOP
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(0,0));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(1,0));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(2,0));
+  Assert.Equal(15, io.ReadPixelAt(0,0));
+  Assert.Equal(15, io.ReadPixelAt(1,0));
+  Assert.Equal(15, io.ReadPixelAt(2,0));
     }
 
     [Fact]
@@ -43,10 +43,10 @@ PSET 10,10, 12
 ";
         interp.Run(src);
         // Only J=0 and J=1 should be set
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(0,6));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(1,6));
-        Assert.Equal(io.GetColor(io.BackgroundColorIndex), io.ReadPixelAt(2,6));
-        Assert.Equal(io.GetColor(12), io.ReadPixelAt(10,10));
+  Assert.Equal(15, io.ReadPixelAt(0,6));
+  Assert.Equal(15, io.ReadPixelAt(1,6));
+  Assert.Equal(io.BackgroundColorIndex, io.ReadPixelAt(2,6));
+  Assert.Equal(12, io.ReadPixelAt(10,10));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ LOOP
 PSET 8,8, 15
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(8,8));
+  Assert.Equal(15, io.ReadPixelAt(8,8));
     }
     [Fact]
     public void Do_With_BlockIf_And_ExitDo_Terminates()
@@ -91,7 +91,7 @@ LOOP
 PSET 12,12, 15
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(12,12));
+  Assert.Equal(15, io.ReadPixelAt(12,12));
     }
 
     [Fact]
@@ -109,8 +109,7 @@ DO WHILE I < 1
 LOOP
 ";
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        Assert.Equal(bg, io.ReadPixelAt(5,5));
+  Assert.Equal(io.BackgroundColorIndex, io.ReadPixelAt(5,5));
     }
 
     [Fact]
@@ -130,7 +129,7 @@ LOOP
 PSET 10,10, 15
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(10,10));
+  Assert.Equal(15, io.ReadPixelAt(10,10));
     }
 
     [Fact]
@@ -154,7 +153,7 @@ PSET I,3, 15
 ";
         interp.Run(src);
         // After inner EXIT DO, outer loop continues to increment I, then exits; I should be 1
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(1,3));
+  Assert.Equal(15, io.ReadPixelAt(1,3));
     }
 
     [Fact]
@@ -172,8 +171,7 @@ DO UNTIL I = 0
 LOOP
 ";
         interp.Run(src);
-        var bg = io.GetColor(io.BackgroundColorIndex);
-        Assert.Equal(bg, io.ReadPixelAt(5,5));
+  Assert.Equal(io.BackgroundColorIndex, io.ReadPixelAt(5,5));
     }
 
     [Fact]
@@ -192,8 +190,8 @@ DO
 LOOP WHILE I < 2
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(0,1));
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(1,1));
+  Assert.Equal(15, io.ReadPixelAt(0,1));
+  Assert.Equal(15, io.ReadPixelAt(1,1));
     }
 
     [Fact]
@@ -212,7 +210,7 @@ LOOP UNTIL I = 2
 PSET 10,10, 15
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(10,10));
+  Assert.Equal(15, io.ReadPixelAt(10,10));
     }
 
     [Fact]
@@ -234,7 +232,7 @@ NEXT
 PSET 4,4, 12
 ";
         interp.Run(src);
-        Assert.Equal(io.GetColor(15), io.ReadPixelAt(3,3));
-        Assert.Equal(io.GetColor(12), io.ReadPixelAt(4,4));
+  Assert.Equal(15, io.ReadPixelAt(3,3));
+  Assert.Equal(12, io.ReadPixelAt(4,4));
     }
 }
