@@ -68,6 +68,9 @@ public class QBasicInterpreter
     private bool _didTextOutput = false;
     private bool _touchedGraphics = false;
     private CancellationToken _currentCt = default;
+    // Cooperative stepping state for WASM host
+    private int _ip = 0;
+    private bool _halted = false;
 
     // Reserved keywords/functions that cannot be used as variable names
     private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -191,6 +194,108 @@ public class QBasicInterpreter
             // starting on the same emulator. Host (MainWindow) resets before starting
             // a new run, and also after completion if still the active run.
         }
+    }
+
+    // Load program into interpreter for cooperative stepping (non-blocking in WASM host)
+    public void LoadProgram(string source)
+    {
+        if (source == null) throw new ArgumentNullException(nameof(source));
+        // Reset per-run state (same as Run)
+        _ints.Clear();
+        _strs.Clear();
+        _intPrintOverrides.Clear();
+        _intArrays1D.Clear();
+        _intArrays2D.Clear();
+        _dataValues.Clear();
+        _dataIndex = 0;
+        _loopStack.Clear();
+        _doLoopStack.Clear();
+        _selectWindows.Clear();
+        _ifChainJumpPending = false;
+        _didTextOutput = false;
+        _touchedGraphics = false;
+
+        QBasicValidator.Validate(source);
+        var lines = SplitLines(source);
+        _currentProgram = Preprocess(lines);
+        _ip = 0;
+        _halted = false;
+    }
+
+    // Execute up to maxStatements and yield. Returns false when program has finished.
+    public bool Step(int maxStatements, CancellationToken ct = default)
+    {
+        if (_halted || _currentProgram == null) return false;
+        int executed = 0;
+        try
+        {
+            while (executed < maxStatements && _currentProgram != null && _ip < _currentProgram.Lines.Count)
+            {
+                ct.ThrowIfCancellationRequested();
+                var line = _currentProgram.Lines[_ip];
+                if (!string.IsNullOrWhiteSpace(line.Code))
+                {
+                    var tokens = Tokenize(line.Code);
+                    if (tokens.Count > 0)
+                    {
+                        _ip = ExecuteLine(tokens, _currentProgram, _ip, ct);
+                        if (_selectWindows.Count > 0)
+                        {
+                            var top = _selectWindows.Peek();
+                            if (_ip == top.runUntilExclusive)
+                            {
+                                _selectWindows.Pop();
+                                _ip = top.endAfter + 1;
+                            }
+                        }
+                        executed++;
+                        continue;
+                    }
+                }
+                _ip++;
+                executed++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("reserved keyword", StringComparison.OrdinalIgnoreCase))
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var safeLine = (_currentProgram != null && _ip >= 0 && _ip < _currentProgram.Lines.Count) ? _currentProgram.Lines[_ip] : new Line { Index = _ip, Code = string.Empty };
+            throw new QBasicRuntimeException(ex.Message, safeLine.Index + 1, safeLine.Code, ex);
+        }
+
+        if (_currentProgram != null && _ip >= _currentProgram.Lines.Count)
+        {
+            // Mimic Run() completion behavior (minimal end mark)
+            try
+            {
+                if (!SuppressEndPrompt && !_touchedGraphics)
+                {
+                    int oldCol = qb.Emulator.CursorX;
+                    int oldRow = qb.Emulator.CursorY;
+                    int oldFg = qb.Emulator.ForegroundColorIndex;
+                    qb.COLOR(15, qb.Emulator.BackgroundColorIndex);
+                    qb.LOCATE(qb.Emulator.TextRows - 1, qb.Emulator.TextCols - 1);
+                    qb.PRINT("*");
+                    qb.LOCATE(oldRow, oldCol);
+                    qb.COLOR(oldFg, qb.Emulator.BackgroundColorIndex);
+                }
+            }
+            catch { }
+            finally
+            {
+                _currentProgram = null;
+                _ip = 0;
+                _halted = true;
+            }
+        }
+        return !_halted;
     }
 
     private static string[] SplitLines(string src)

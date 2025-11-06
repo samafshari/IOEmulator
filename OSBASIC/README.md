@@ -33,6 +33,12 @@ Note: The Simulator currently hosts only the OpenSilver UI page; the emulator is
 - Special keys: Enter, Backspace, Delete, Home, End, Tab, Escape, Arrow keys.
 - Mouse: position and left/right button state are forwarded to the emulator.
 
+### Keyboard focus behavior
+
+- The console captures all keyboard input (including arrows and modifiers) via a hidden TextBox.
+- Clicking the framebuffer or changing a setting will automatically return focus to the console input, so navigation keys do not interact with the UI controls.
+- The top-bar ComboBoxes are not tab-stoppable; use the mouse to adjust them, and focus will snap back to the console after selection.
+
 ## Notes
 
 - Sound: implemented via WebAudio using JS interop. The Browser host calls functions in `wwwroot/js/webaudio.js` through `IJSRuntime` to play beeps/tones/music strings.
