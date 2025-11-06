@@ -4,7 +4,7 @@ CLS
 
 ' Ray marching demo: sphere with basic shading
 ' Fixed-point scale
-S = 1000
+S = 100
 
 ' Camera position
 CX = 0
@@ -16,10 +16,10 @@ SX = 0
 SY = 0
 SZ = 0
 
-' Sphere radius
-R = S
+' Sphere radius (scaled to fill ~80% of screen)
+R = 3 * S
 
-' Light position
+' Light position (will animate)
 LX = 2 * S
 LY = 2 * S
 LZ = -2 * S
@@ -27,8 +27,8 @@ LZ = -2 * S
 ' Max distance to march
 MAXDIST = 10 * S
 
-' Max steps
-STEPS = 100
+' Max steps (performance)
+STEPS = 64
 
 print "Ray marching demo..."
 ' For each pixel

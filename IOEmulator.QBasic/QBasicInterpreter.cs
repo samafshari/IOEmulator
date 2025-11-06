@@ -1335,10 +1335,23 @@ public class QBasicInterpreter
         }
         else
         {
-            var seconds = ParseInt(tokens, 1);
+            // Accept floating-point seconds (e.g., 0.1 => 100ms)
+            double seconds = 0.0;
+            // Prefer a literal double at position 1 if provided (e.g., "0.1", "1e-1")
+            if (tokens.Count > 1 && double.TryParse(tokens[1], System.Globalization.NumberStyles.Float, CultureInfo.InvariantCulture, out var dsecs))
+            {
+                seconds = dsecs;
+            }
+            else
+            {
+                // Fallback to integer expression evaluation for backward compatibility
+                int idx = 1;
+                try { seconds = ParseIntExprAdv(tokens, ref idx); }
+                catch { seconds = 0.0; }
+            }
             if (seconds <= 0) return; // Non-blocking for zero or negative
             // Apply speed factor to sleep duration
-            int adjustedMs = (int)(seconds * 1000 / SpeedFactor);
+            int adjustedMs = (int)Math.Round(seconds * 1000.0 / SpeedFactor);
             if (adjustedMs > 0)
             {
                 using var cts = new CancellationTokenSource(adjustedMs);
