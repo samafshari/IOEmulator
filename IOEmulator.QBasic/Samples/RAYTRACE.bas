@@ -30,9 +30,11 @@ MAXDIST = 10 * S
 ' Max steps
 STEPS = 100
 
+print "Ray marching demo..."
 ' For each pixel
 FOR Y = 0 TO 199
 FOR X = 0 TO 319
+print "Rendering pixel ("; X; ","; Y; ")"
   ' Compute ray direction (unnormalized)
   SXMIN = -16 * S / 10
   SXMAX = 16 * S / 10
@@ -45,11 +47,11 @@ FOR X = 0 TO 319
   RZ = S  ' towards Z=0
 
   ' Normalize ray direction
-  LEN = SQR(RX * RX + RY * RY + RZ * RZ)
-  IF LEN = 0 THEN LEN = 1
-  RX = RX * S / LEN
-  RY = RY * S / LEN
-  RZ = RZ * S / LEN
+  RLEN = SQR(RX * RX + RY * RY + RZ * RZ)
+  IF RLEN = 0 THEN RLEN = 1
+  RX = RX * S / RLEN
+  RY = RY * S / RLEN
+  RZ = RZ * S / RLEN
 
   ' March along ray
   PosX = CX

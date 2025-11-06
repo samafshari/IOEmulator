@@ -69,6 +69,32 @@ public class QBasicInterpreter
     private bool _touchedGraphics = false;
     private CancellationToken _currentCt = default;
 
+    // Reserved keywords/functions that cannot be used as variable names
+    private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "LEN", "ASC", "VAL", "CHR", "STR", "LEFT", "RIGHT", "MID",
+        "LTRIM", "RTRIM", "TRIM", "SIN", "COS", "SQR", "ATN",
+        "RND", "PX", "PC", "SCREEN", "COLOR", "CLS", "PRINT",
+        "INPUT", "IF", "THEN", "ELSE", "ELSEIF", "END", "FOR", "TO",
+        "STEP", "NEXT", "WHILE", "WEND", "DO", "LOOP", "UNTIL",
+        "GOTO", "GOSUB", "RETURN", "SUB", "FUNCTION", "DIM", "AS",
+        "INTEGER", "STRING", "SELECT", "CASE", "PSET", "LINE",
+        "CIRCLE", "LOCATE", "SLEEP", "SOUND", "PLAY", "DATA", "READ",
+        "RESTORE", "AND", "OR", "NOT", "MOD", "SHARED"
+    };
+
+    private static void ValidateVariableName(string name)
+    {
+        var baseName = name.TrimEnd('$', '%', '&', '!', '#');
+        if (ReservedKeywords.Contains(baseName))
+        {
+            throw new InvalidOperationException(
+                $"Cannot use reserved keyword '{baseName.ToUpperInvariant()}' as a variable name. " +
+                $"Reserved keywords include built-in functions (LEN, SQR, SIN, etc.) and statements. " +
+                $"Please use a different variable name.");
+        }
+    }
+
     public QBasicInterpreter(QBasicApi qb)
     {
         this.qb = qb ?? throw new ArgumentNullException(nameof(qb));
@@ -123,6 +149,11 @@ public class QBasicInterpreter
                 _didTextOutput = true;
             }
             catch { /* ignore secondary failures */ }
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("reserved keyword"))
+        {
+            // Reserved keyword error - these should propagate to caller for proper error handling
+            throw;
         }
         catch (Exception ex)
         {
@@ -378,6 +409,11 @@ public class QBasicInterpreter
             catch (OperationCanceledException)
             {
                 // Don't wrap cancellation, let it bubble up
+                throw;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("reserved keyword", StringComparison.OrdinalIgnoreCase))
+            {
+                // Reserved keyword errors should propagate unwrapped
                 throw;
             }
             catch (Exception ex)
@@ -1268,6 +1304,7 @@ public class QBasicInterpreter
         // DIM identifier ( expr [, expr] ) AS INTEGER
         int i = 1;
         var name = ExpectIdentifier(tokens, i++);
+        ValidateVariableName(name);
         if (i >= tokens.Count || tokens[i] != "(") throw new InvalidOperationException("Expected ( after array name");
         i++;
         int size1 = ParseIntExprAdv(tokens, ref i);
@@ -1300,6 +1337,7 @@ public class QBasicInterpreter
         if (index >= tokens.Count) throw new InvalidOperationException("Unexpected end of line");
         var tok = tokens[index];
         if (!IsIdentifier(tok)) throw new InvalidOperationException("Expected identifier");
+        ValidateVariableName(tok);  // Validate before using as variable name
         index++;
         if (index < tokens.Count && tokens[index] == "(")
         {
@@ -1392,6 +1430,7 @@ public class QBasicInterpreter
         // FOR var = start TO end [STEP step]
         int i = 1;
         var varName = ExpectIdentifier(tokens, i++);
+        ValidateVariableName(varName);
         if (i >= tokens.Count || tokens[i] != "=") throw new InvalidOperationException("Expected = in FOR");
         i++;
         int start = ParseIntExprAdv(tokens, ref i);
@@ -1881,7 +1920,17 @@ public class QBasicInterpreter
                     return (int)(Math.Atan(value / 100.0) * 180.0 / Math.PI); // Convert from scaled value back to degrees
                 }
                 // variable or array element
-                i++; 
+                i++;
+                
+                // Check if this is a reserved keyword being used as a variable (without parentheses)
+                if (ReservedKeywords.Contains(tok))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot use reserved keyword '{tok.ToUpperInvariant()}' as a variable name. " +
+                        $"Reserved keywords include built-in functions (LEN, SQR, SIN, etc.) and statements. " +
+                        $"Please use a different variable name.");
+                }
+                
                 if (i < tokens.Count && tokens[i] == "(")
                 {
                     i++; int idx1 = ParseExpr(ref i);
@@ -2221,9 +2270,20 @@ public class QBasicInterpreter
         throw new InvalidOperationException("Not a string factor");
     }
 
-    private void SetInt(string name, int value) => _ints[name] = value;
+    private void SetInt(string name, int value)
+    {
+        ValidateVariableName(name);
+        _ints[name] = value;
+    }
+    
     private int GetInt(string name) => _ints.TryGetValue(name, out var v) ? v : 0;
-    private void SetStr(string name, string value) => _strs[name] = value ?? string.Empty;
+    
+    private void SetStr(string name, string value)
+    {
+        ValidateVariableName(name);
+        _strs[name] = value ?? string.Empty;
+    }
+    
     private string GetStr(string name) => _strs.TryGetValue(name, out var v) ? v : string.Empty;
 
     private void DoSOUND(List<string> tokens)

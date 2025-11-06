@@ -37,8 +37,8 @@ FOR I = 0 TO 359
 NEXT
 
 ' Player
-PX = 10 * S
-PY = 10 * S
+PLAYERX = 10 * S
+PLAYERY = 10 * S
 ANGLE = 0
 SPEED = 50
 TURN_SPEED = 1
@@ -62,8 +62,8 @@ MAIN_LOOP:
     ' Cast ray
     DX = COSL(RAYANG)
     DY = SINL(RAYANG)
-    RX = PX
-    RY = PY
+    RX = PLAYERX
+    RY = PLAYERY
     DIST = 0
     HIT = 0
     WHILE DIST < 20000 AND HIT = 0
@@ -96,17 +96,17 @@ MAIN_LOOP:
   NEXT SX
 
   ' Move player
-  PX = PX + COSL(ANGLE) * SPEED / 100
-  PY = PY + SINL(ANGLE) * SPEED / 100
+  PLAYERX = PLAYERX + COSL(ANGLE) * SPEED / 100
+  PLAYERY = PLAYERY + SINL(ANGLE) * SPEED / 100
   ANGLE = ANGLE + TURN_SPEED
   ' Normalize angle to 0-359 using MOD
   ANGLE = ANGLE MOD 360
   IF ANGLE < 0 THEN ANGLE = ANGLE + 360
 
   ' Check collision (single-line IFs only)
-  MX = PX / S
-  MY = PY / S
-  IF MX >= 0 AND MX < MW AND MY >= 0 AND MY < MH THEN IF MAZE(MX, MY) = 1 THEN PX = PX - COSL(ANGLE) * SPEED / 100 : PY = PY - SINL(ANGLE) * SPEED / 100
+  MX = PLAYERX / S
+  MY = PLAYERY / S
+  IF MX >= 0 AND MX < MW AND MY >= 0 AND MY < MH THEN IF MAZE(MX, MY) = 1 THEN PLAYERX = PLAYERX - COSL(ANGLE) * SPEED / 100 : PLAYERY = PLAYERY - SINL(ANGLE) * SPEED / 100
 
   SLEEP 0
   GOTO MAIN_LOOP
