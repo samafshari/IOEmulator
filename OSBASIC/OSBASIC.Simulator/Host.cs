@@ -43,7 +43,7 @@ namespace OSBASIC.Simulator
         {
             // Create emulator and QBASIC interpreter
             _io = new IOEmulator();
-            _qb = new QBasicApi(_io); // default ConsoleBeepSoundDriver on Windows
+            _qb = new QBasicApi(_io, new SimulatorSoundDriver());
 
             // Wire input from OpenSilver page to emulator
             page.PrintableChar += ch => _io.InjectKey(new KeyEvent(KeyEventType.Down, KeyCode.Unknown, ch));
