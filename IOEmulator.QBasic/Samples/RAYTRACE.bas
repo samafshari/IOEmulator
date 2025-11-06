@@ -34,7 +34,6 @@ print "Ray marching demo..."
 ' For each pixel
 FOR Y = 0 TO 199
 FOR X = 0 TO 319
-print "Rendering pixel ("; X; ","; Y; ")"
   ' Compute ray direction (unnormalized)
   SXMIN = -16 * S / 10
   SXMAX = 16 * S / 10

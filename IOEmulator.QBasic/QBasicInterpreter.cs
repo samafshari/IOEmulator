@@ -563,7 +563,7 @@ public class QBasicInterpreter
                 // Support compact ENDIF
                 ip++; break;
             case "GOTO":
-                ip = ResolveLabel(program, ExpectIdentifier(tokens, 1)); break;
+                ip = JumpToLabel(program, ip, ExpectIdentifier(tokens, 1)); break;
             case "DO":
                 ip = DoDO(tokens, program, ip); break;
             case "EXIT":
@@ -1045,7 +1045,7 @@ public class QBasicInterpreter
             if (action == "GOTO")
             {
                 var label = ExpectIdentifier(tokens, i + 1);
-                return ResolveLabel(program, label);
+                return JumpToLabel(program, currentIp, label);
             }
             if (action == "END")
             {
@@ -1264,6 +1264,61 @@ public class QBasicInterpreter
             throw new InvalidOperationException($"Undefined label: {label}");
         return idx;
     }
+
+        private int JumpToLabel(ProgramIR program, int currentIp, string label)
+        {
+            int targetIp = ResolveLabel(program, label);
+            AdjustStacksForJump(program, currentIp, targetIp);
+            // Clear any pending SELECT CASE windows and IF chain state since we’re leaving linear flow
+            _selectWindows.Clear();
+            _ifChainJumpPending = false;
+            return targetIp;
+        }
+
+        private void AdjustStacksForJump(ProgramIR program, int currentIp, int targetIp)
+        {
+            // If jumping forward past the end of any active FOR/WHILE/DO loops, pop them
+            // FOR/NEXT: compute matching NEXT for the loop header (BodyStart - 1)
+            while (_loopStack.Count > 0)
+            {
+                var top = _loopStack.Peek();
+                // WHILE loops have WendIp set; FOR loops have BodyStart with end unknown; infer by scanning
+                if (top.WendIp >= 0)
+                {
+                    if (targetIp > top.WendIp)
+                    {
+                        _loopStack.Pop();
+                        continue;
+                    }
+                    break;
+                }
+                else
+                {
+                    int forHeaderIp = Math.Max(0, top.BodyStart - 1);
+                    int nextIp = FindMatchingNext(program, forHeaderIp + 1);
+                    if (targetIp > nextIp)
+                    {
+                        _loopStack.Pop();
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            // DO/LOOP stack
+            while (_doLoopStack.Count > 0)
+            {
+                var top = _doLoopStack.Peek();
+                int doHeaderIp = Math.Max(0, top.BodyStart - 1);
+                int loopIp = FindMatchingLoop(program, doHeaderIp + 1);
+                if (targetIp > loopIp)
+                {
+                    _doLoopStack.Pop();
+                    continue;
+                }
+                break;
+            }
+        }
 
     private void DoSLEEP(List<string> tokens, CancellationToken ct)
     {
