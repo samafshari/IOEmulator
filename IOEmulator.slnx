@@ -4,4 +4,5 @@
   <Project Path="IOEmulator.Tests\IOEmulator.Tests.csproj" />
   <Project Path="IOEmulator.QBasic\IOEmulator.QBasic.csproj" />
   <Project Path="IOEmulator.SDLApp\IOEmulator.SDLApp.csproj" />
+  <Project Path="IOEmulator.OpenSilver.Web\IOEmulator.OpenSilver.Web.csproj" />
 </Solution>
