@@ -79,7 +79,7 @@ public class QBasicInterpreter
         "STEP", "NEXT", "WHILE", "WEND", "DO", "LOOP", "UNTIL",
         "GOTO", "GOSUB", "RETURN", "SUB", "FUNCTION", "DIM", "AS",
         "INTEGER", "STRING", "SELECT", "CASE", "PSET", "LINE",
-        "CIRCLE", "LOCATE", "SLEEP", "SOUND", "PLAY", "DATA", "READ",
+        "CIRCLE", "LOCATE", "SLEEP", "SOUND", "PLAY", "BUFFER", "DATA", "READ",
         "RESTORE", "AND", "OR", "NOT", "MOD", "SHARED"
     };
 
@@ -187,6 +187,9 @@ public class QBasicInterpreter
                 }
                 catch { /* ignore */ }
             }
+            // Note: Do not reset buffering mode here to avoid races with a new program
+            // starting on the same emulator. Host (MainWindow) resets before starting
+            // a new run, and also after completion if still the active run.
         }
     }
 
@@ -525,6 +528,8 @@ public class QBasicInterpreter
                     ip++;
                     break;
                 }
+            case "BUFFER":
+                DoBUFFER(tokens); ip++; break;
             case "DECLARE":
                 // Ignore prototypes
                 ip++; break;
@@ -2417,6 +2422,25 @@ public class QBasicInterpreter
         if (i < tokens.Count && tokens[i] == ",") i++;
         int d = ParseIntExprAdv(tokens, ref i);
         qb.SOUND(f, d);
+    }
+
+    private void DoBUFFER(List<string> tokens)
+    {
+        // BUFFER 1 | BUFFER 2 | BUFFER SWAP | BUFFER(1|2)
+        if (tokens.Count < 2) throw new InvalidOperationException("BUFFER requires an argument: 1, 2, or SWAP");
+        int i = 1;
+        // Optional open paren
+        if (i < tokens.Count && tokens[i] == "(") i++;
+        if (i < tokens.Count && tokens[i].Equals("SWAP", StringComparison.OrdinalIgnoreCase))
+        {
+            qb.Emulator.BufferSwap();
+            return;
+        }
+        int mode = ParseIntExprAdv(tokens, ref i);
+        if (i < tokens.Count && tokens[i] == ")") i++;
+        if (mode == 1) qb.Emulator.SetBufferingMode(false);
+        else if (mode == 2) qb.Emulator.SetBufferingMode(true);
+        else throw new InvalidOperationException("BUFFER expects 1 (single) or 2 (double).");
     }
 
     private static int ParseInt(List<string> tokens, int index)

@@ -17,13 +17,15 @@ public partial class MainWindow : Window
     private System.Threading.CancellationTokenSource? _runCts;
     private QBasicInterpreter? _currentInterp;
     private Image? _image;
-    private readonly DispatcherTimer? _timer;
+    private DispatcherTimer? _timer;
     private WriteableBitmap? _wbmp;
     private bool _loggedOnce = false;
     private MenuItem? _samplesMenu;
     private MenuItem? _speedMenu;
+    private MenuItem? _refreshMenu;
     private string _currentSample = "GUESS";
     private double _currentSpeed = 1.0;
+    private int _currentRefreshMs = 16; // ~60 FPS by default
 
     public MainWindow()
     {
@@ -34,7 +36,8 @@ public partial class MainWindow : Window
         // Find UI elements
         _image = this.FindControl<Image>("vramImage");
         _samplesMenu = this.FindControl<MenuItem>("samplesMenu");
-        _speedMenu = this.FindControl<MenuItem>("speedMenu");
+    _speedMenu = this.FindControl<MenuItem>("speedMenu");
+    _refreshMenu = this.FindControl<MenuItem>("refreshMenu");
         if (_image != null)
         {
             RenderOptions.SetBitmapInterpolationMode(_image, BitmapInterpolationMode.None);
@@ -54,12 +57,19 @@ public partial class MainWindow : Window
         }
         catch { /* ignore menu population issues */ }
 
+        // Populate Refresh menu
+        try
+        {
+            PopulateRefreshMenu();
+        }
+        catch { /* ignore menu population issues */ }
+
         // Run a default BASIC sample in the background
         StartSample(_currentSample);
         
 
-    // Refresh at ~60 FPS on UI thread at render priority
-        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, __) => SafeTick());
+    // Refresh at adjustable FPS on UI thread at render priority
+        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(_currentRefreshMs), DispatcherPriority.Render, (_, __) => SafeTick());
         _timer.Start();
 
         // Hook text input for printable characters
@@ -120,6 +130,42 @@ public partial class MainWindow : Window
         _speedMenu.ItemsSource = items;
     }
 
+    private void PopulateRefreshMenu()
+    {
+        if (_refreshMenu == null) return;
+        _refreshMenu.ItemsSource = null;
+        var items = new System.Collections.Generic.List<MenuItem>();
+        // label -> interval ms
+        var rates = new (int ms, string label)[]
+        {
+            (66, "15 FPS"),
+            (33, "30 FPS"),
+            (25, "40 FPS"),
+            (16, "60 FPS (Default)"),
+            (12, "80 FPS"),
+            (8,  "120 FPS")
+        };
+        foreach (var (ms, label) in rates)
+        {
+            var mi = new MenuItem { Header = label, Focusable = false };
+            int captured = ms;
+            mi.Click += (_, __) => SetRefreshInterval(captured);
+            items.Add(mi);
+        }
+        _refreshMenu.ItemsSource = items;
+    }
+
+    private void SetRefreshInterval(int intervalMs)
+    {
+        _currentRefreshMs = Math.Max(1, intervalMs);
+        if (_timer != null)
+        {
+            try { _timer.Stop(); } catch { }
+            _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(_currentRefreshMs), DispatcherPriority.Render, (_, __) => SafeTick());
+            _timer.Start();
+        }
+    }
+
     private void SetSpeed(double speed)
     {
         _currentSpeed = speed;
@@ -136,6 +182,8 @@ public partial class MainWindow : Window
         try { _runCts?.Cancel(); } catch { }
         _runCts?.Dispose();
         _runCts = new System.Threading.CancellationTokenSource();
+        // Reset buffering to default (single) when changing program
+        try { _io.SetBufferingMode(false); } catch { }
         try
         {
             var src = QBasicSamples.Load(sample);
@@ -149,6 +197,12 @@ public partial class MainWindow : Window
                 try { interp.Run(src, _runCts.Token); }
                 catch (System.OperationCanceledException) { /* normal on close */ }
                 catch { /* swallow to avoid unobserved exceptions in background */ }
+                finally
+                {
+                    // Also ensure buffer mode resets after program finishes,
+                    // but only if this is still the active interpreter (avoid race with a new run)
+                    try { if (ReferenceEquals(_currentInterp, interp)) _io.SetBufferingMode(false); } catch { }
+                }
             });
             // Ensure the render surface has keyboard focus after menu selection
             try { _image?.Focus(); } catch { }
@@ -188,7 +242,8 @@ public partial class MainWindow : Window
                 catch { /* ignore diagnostics failures */ }
                 _loggedOnce = true;
             }
-            if (_wbmp == null || _wbmp.PixelSize.Width != w || _wbmp.PixelSize.Height != h)
+            bool sizeChanged = _wbmp == null || _wbmp.PixelSize.Width != w || _wbmp.PixelSize.Height != h;
+            if (sizeChanged)
             {
                 _wbmp?.Dispose();
                 // Use BGRA8888 which is the most widely supported format in Avalonia/Skia
@@ -200,6 +255,8 @@ public partial class MainWindow : Window
                 if (_image != null) _image.Source = _wbmp;
             }
             if (_wbmp == null) return;
+            // Skip redraw if nothing changed and size is stable
+            if (!sizeChanged && !_io.Dirty) return;
             using var fb = _wbmp.Lock();
             // Copy VRAM RGB to BGRA into surface, honoring framebuffer stride and avoiding races
             var srcBuf = _io.PixelBuffer; // snapshot reference
@@ -236,6 +293,7 @@ public partial class MainWindow : Window
                 System.Buffers.ArrayPool<byte>.Shared.Return(bgra);
             }
             _image?.InvalidateVisual();
+            _io.ResetDirty();
         }
         catch
         {

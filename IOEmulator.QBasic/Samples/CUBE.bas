@@ -1,7 +1,7 @@
 SCREEN 13
 COLOR 15, 0
 CLS
-
+BUFFER 2
 ' Rotating wireframe cube (efficient)
 ' Uses integer math and LINE drawing only
 
@@ -105,6 +105,7 @@ DO
   ANGY = ANGY + 3: IF ANGY >= 360 THEN ANGY = ANGY - 360
   ANGX = ANGX + 2: IF ANGX >= 360 THEN ANGX = ANGX - 360
 
+  BUFFER SWAP
   sleep 0.05
 LOOP
 

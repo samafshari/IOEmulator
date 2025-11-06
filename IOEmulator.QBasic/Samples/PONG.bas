@@ -23,7 +23,7 @@ PBX = BX: PBY = BY
 ' Inner bounds so 3x3 ball doesn't overlap the border
 MINX = 2: MAXX = W - 3
 MINY = 2: MAXY = H - 3
-
+BUFFER 2
 DO
   ' Input: arrow keys to move paddle
   IF KEY("UP") THEN PY = PY - 2
@@ -81,6 +81,7 @@ DO
   PPX = PX: PPY = PY
   PBX = BX: PBY = BY
 
+  BUFFER SWAP
   SLEEP 0.01
 LOOP
 
